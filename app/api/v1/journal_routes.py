@@ -1,6 +1,7 @@
 """
 Journal API Routes - Controller Layer
 Thin controllers that delegate to domain services.
+Supabase auth integration.
 """
 
 from fastapi import APIRouter, Depends, BackgroundTasks, Query, status, HTTPException
@@ -70,7 +71,6 @@ async def create_entry(
     - Full Analysis: queued for background processing (async)
     """
     from app.infrastructure.ai.client import LLMClient
-    from app.db.redis_client import get_analysis_queue
     
     # 1. Create entry
     entry = service.create_entry(user["id"], data)
@@ -127,11 +127,6 @@ async def delete_entry(
 # ── Private Helpers ───────────────────────────────────────────────────────────
 
 def _enqueue_analysis(entry_id: str, user_id: str, entry_text: dict) -> None:
-    """Enqueue psychometric analysis job."""
-    get_analysis_queue().enqueue(
-        "app.workers.jobs.run_analysis_job",
-        entry_id=entry_id,
-        user_id=user_id,
-        entry_text=entry_text,
-        job_timeout=120,
-    )
+    """Enqueue psychometric analysis job to Celery worker."""
+    from app.workers.tasks import run_psychometric_analysis
+    run_psychometric_analysis.delay(entry_id=entry_id, user_id=user_id, entry_text=entry_text)
