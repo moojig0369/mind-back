@@ -1,36 +1,30 @@
 """
-Journal domain schemas for API requests/responses.
-Pydantic models for validation.
+Journal Domain Schemas - API Request/Response Models
 """
 
 from datetime import datetime
-from typing import Optional, List
 from uuid import UUID
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
 class JournalCreateRequest(BaseModel):
-    """Request to create a new journal entry."""
-    
-    save_text: bool = Field(..., description="Whether to save the text content")
+    """Тэмдэглэл үүсгэх хүсэлт."""
+    surface_text: str = Field(..., min_length=1, max_length=5000)
+    inner_reaction_text: str = Field(..., min_length=1, max_length=5000)
+    meaning_text: str = Field(..., min_length=1, max_length=5000)
+    save_text: bool = True
+
+
+class JournalUpdateRequest(BaseModel):
+    """Тэмдэглэл шинэчлэх хүсэлт."""
     surface_text: Optional[str] = Field(None, max_length=5000)
     inner_reaction_text: Optional[str] = Field(None, max_length=5000)
     meaning_text: Optional[str] = Field(None, max_length=5000)
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "save_text": True,
-                "surface_text": "Today I felt overwhelmed...",
-                "inner_reaction_text": "I noticed tension in my chest...",
-                "meaning_text": "This reminds me of my need for control..."
-            }
-        }
 
 
 class JournalResponse(BaseModel):
-    """Journal entry response."""
-    
+    """Тэмдэглэлийн хариу."""
     id: UUID
     user_id: UUID
     entry_index: int
@@ -46,29 +40,23 @@ class JournalResponse(BaseModel):
 
 
 class JournalListResponse(BaseModel):
-    """Paginated list of journal entries."""
-    
+    """Тэмдэглэлийн жагсаалт."""
     items: List[JournalResponse]
     total: int
     page: int
     page_size: int
-    
-    class Config:
-        from_attributes = True
-
-
-class SeedInsightRequest(BaseModel):
-    """Request for seed insight generation."""
-    
-    surface_text: str
-    inner_text: str
-    meaning_text: str
 
 
 class SeedInsightResponse(BaseModel):
-    """Seed insight response."""
-    
+    """Seed Insight хариу."""
     mirror: str
     reframe: str
     relief: str
     summary: str
+
+
+class JournalCreateResponse(BaseModel):
+    """Тэмдэглэл үүсгэх хариу."""
+    entry_id: UUID
+    seed_insight: SeedInsightResponse
+    analysis_channel: str
