@@ -6,7 +6,7 @@ Rate limiting middleware.
 
 import time
 from fastapi import Request, HTTPException, status
-from app.db.redis_client import get_redis_connection
+from app.infrastructure.redis_client import get_redis_connection
 from app.core.settings import get_settings
 
 _settings = get_settings()

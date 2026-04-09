@@ -1,9 +1,24 @@
 ```
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
+*.py~
+*.py.class
+*.py.backup
+*.swp
+*.swo
+
+# Dependencies
+.venv/
+venv/
+env/
+ENV/
+.venv.bak/
+.ENV.bak/
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -21,44 +36,36 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
-venv/
-ENV/
-env.bak/
-.venv/
-env/
+# Environment
+.env
+.env.local
+.env.dev
+.env.test
+.env.prod
+*.env.*
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
+*.out
+*.pid
+*.seed
+*.session
 
-# Environment variables
-.env
-.env.local
-*.env.*
-
-# Coverage reports
+# Testing
 .coverage
+coverage/
 htmlcov/
-.coverage.*
-
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
-# Redis
-dump.rdb
-
-# Database
-*.sqlite3
-*.db
-
-# OS
-.DS_Store
-Thumbs.db
+.nyc_output/
+coverage-final.json
+.pytest_cache/
+.hypothesis/
 ```

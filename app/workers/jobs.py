@@ -25,20 +25,23 @@ def generate_seed_job(
     Богино промптоор Seed Insight үүсгэж WS-оор буцаана.
     Дуусмагц run_analysis_job-г analysis queue-д нэмнэ.
     """
-    from app.services.llm_service import get_llm_service
-    from app.services.journal_service import JournalService
-    from app.db.supabase import get_admin_client
-    from app.db.redis_client import get_redis_connection, get_analysis_queue
+    from app.infrastructure.supabase_client import get_admin_client
+    from app.infrastructure.redis_client import get_redis_connection, get_analysis_queue
+    from app.infrastructure.repositories.journal_repo import JournalRepository
+    from app.domains.journal.service import JournalService
+    from app.infrastructure.ai.client import LLMClient
 
     db = get_admin_client()
-    journal = JournalService(db)
+    repo = JournalRepository(db)
+    llm_client = LLMClient()
+    journal = JournalService(repo, llm_client)
     redis = get_redis_connection()
 
     publish(redis, entry_id, "processing", "Seed Insight үүсгэж байна...")
 
     try:
         seed = run_async(
-            get_llm_service().generate_seed_insight(**entry_text)
+            journal.generate_seed_insight(**entry_text)
         )
         journal.save_seed_insight(entry_id, seed.model_dump())
         publish(redis, entry_id, "seed_done", payload=seed.model_dump())
@@ -66,13 +69,16 @@ def run_analysis_job(
     Maslow + Plutchik + Hawkins бүрэн шинжилгээ.
     Seed Insight дуусмагц ажиллана.
     """
-    from app.services.llm_service import get_llm_service
-    from app.services.journal_service import JournalService
-    from app.db.supabase import get_admin_client
-    from app.db.redis_client import get_redis_connection
+    from app.infrastructure.supabase_client import get_admin_client
+    from app.infrastructure.redis_client import get_redis_connection
+    from app.infrastructure.repositories.journal_repo import JournalRepository
+    from app.domains.journal.service import JournalService
+    from app.infrastructure.ai.client import LLMClient
 
     db = get_admin_client()
-    journal = JournalService(db)
+    repo = JournalRepository(db)
+    llm_client = LLMClient()
+    journal = JournalService(repo, llm_client)
     redis = get_redis_connection()
 
     publish(redis, entry_id, "analyzing", "Гүн шинжилгээ хийж байна...")
@@ -80,7 +86,7 @@ def run_analysis_job(
     try:
         ewma = journal.get_user_ewma(user_id)
         result = run_async(
-            get_llm_service().run_analysis(
+            journal.run_analysis(
                 ewma_previous=ewma, **entry_text
             )
         )
@@ -122,18 +128,21 @@ def process_deep_insight(user_id: str) -> None:
     ValueGraph-д тулгуурлан Deep Insight үүсгэж
     хэрэглэгчид push notification илгээнэ.
     """
-    from app.services.llm_service import get_llm_service
-    from app.services.journal_service import JournalService
-    from app.db.supabase import get_admin_client
-    from app.db.redis_client import get_redis_connection
+    from app.infrastructure.supabase_client import get_admin_client
+    from app.infrastructure.redis_client import get_redis_connection
+    from app.infrastructure.repositories.journal_repo import JournalRepository
+    from app.domains.journal.service import JournalService
+    from app.infrastructure.ai.client import LLMClient
 
     db = get_admin_client()
-    journal = JournalService(db)
+    repo = JournalRepository(db)
+    llm_client = LLMClient()
+    journal = JournalService(repo, llm_client)
     redis = get_redis_connection()
 
     count = journal.count_user_entries(user_id)
     summary = journal.build_graph_summary(user_id)
-    insight = run_async(get_llm_service().generate_deep_insight(summary, count))
+    insight = run_async(journal.generate_deep_insight(summary, count))
 
     db.table("deep_insights").insert(
         {

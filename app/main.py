@@ -9,7 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.settings import get_settings
 from app.core.middleware import apply_rate_limit
-from app.api.routes import entries, graph, admin, websocket, demo
+from app.api.v1.journal_routes import router as journal_router
+from app.infrastructure.database import init_database, db
+from app.infrastructure.redis_client import init_redis
+from app.infrastructure.supabase_client import init_supabase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,19 +44,15 @@ app.add_middleware(
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-app.include_router(entries.router, prefix="/api")
-app.include_router(graph.router, prefix="/api")
-app.include_router(admin.router, prefix="/api")
-app.include_router(demo.router, prefix="/api")
-app.include_router(websocket.router)
+app.include_router(journal_router, prefix="/api/v1")
 
 # ── System ────────────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["System"])
 async def check_health():
     """Redis болон Supabase холболт шалгана."""
-    from app.db.redis_client import get_redis_connection
-    from app.db.supabase import get_anon_client
+    from app.infrastructure.redis_client import get_redis_connection
+    from app.infrastructure.supabase_client import get_anon_client
 
     result = {"api": "ok", "redis": "unknown", "supabase": "unknown"}
 
@@ -74,7 +73,42 @@ async def check_health():
 
 @app.on_event("startup")
 async def on_startup():
-    logging.getLogger(__name__).info(
+    """Initialize all infrastructure connections on startup."""
+    logger = logging.getLogger(__name__)
+    logger.info(
         f"🚀 Систем эхэллээ | env={_settings.app_env}"
         f" | model={_settings.llm_model}"
     )
+    
+    # Initialize database
+    try:
+        init_database(_settings.supabase_url)
+        logger.info("✅ Database initialized")
+    except Exception as exc:
+        logger.error(f"❌ Database initialization failed: {exc}")
+    
+    # Initialize Redis
+    try:
+        if _settings.redis_url:
+            init_redis(_settings.redis_url)
+            logger.info("✅ Redis initialized")
+    except Exception as exc:
+        logger.error(f"❌ Redis initialization failed: {exc}")
+    
+    # Initialize Supabase
+    try:
+        init_supabase(
+            _settings.supabase_url,
+            _settings.supabase_key,
+            _settings.supabase_anon_key
+        )
+        logger.info("✅ Supabase initialized")
+    except Exception as exc:
+        logger.error(f"❌ Supabase initialization failed: {exc}")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """Cleanup connections on shutdown."""
+    await db.close()
+    logging.getLogger(__name__).info("👋 System shutdown complete")

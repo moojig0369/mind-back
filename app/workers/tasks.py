@@ -52,10 +52,10 @@ def run_psychometric_analysis(
         from app.infrastructure.ai.client import LLMClient
         from app.domains.insight.service import InsightService
         from app.infrastructure.repositories.analysis_repo import AnalysisRepository
-        from app.infrastructure.database import get_supabase_client
+        from app.infrastructure.supabase_client import get_admin_client
         
         # Get DB client
-        db = get_supabase_client()
+        db = get_admin_client()
         analysis_repo = AnalysisRepository(db)
         
         # Create pending analysis record
@@ -117,9 +117,9 @@ def update_value_graph(
         
         from app.domains.graph.service import GraphService
         from app.infrastructure.repositories.graph_repo import GraphRepository
-        from app.infrastructure.database import get_supabase_client
+        from app.infrastructure.supabase_client import get_admin_client
         
-        db = get_supabase_client()
+        db = get_admin_client()
         graph_repo = GraphRepository(db)
         graph_service = GraphService(graph_repo)
         
