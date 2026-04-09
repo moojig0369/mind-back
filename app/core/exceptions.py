@@ -82,3 +82,25 @@ class ServiceUnavailableException(AppException):
             status_code=503,
             detail={"service": service},
         )
+
+
+class AIProcessingException(AppException):
+    """AI processing failed."""
+    
+    def __init__(self, message: str, model: Optional[str] = None):
+        super().__init__(
+            message=f"AI processing failed: {message}",
+            status_code=503,
+            detail={"model": model},
+        )
+
+
+class DatabaseException(AppException):
+    """Database operation failed."""
+    
+    def __init__(self, message: str, operation: Optional[str] = None):
+        super().__init__(
+            message=f"Database error: {message}",
+            status_code=500,
+            detail={"operation": operation},
+        )

@@ -1,10 +1,10 @@
 """
 Journal Repository - Database Access Layer
 Handles all direct database operations for Journal domain.
+Uses Supabase client for database access.
 """
 
 from typing import Optional, List, Dict, Any
-from uuid import UUID
 from supabase import Client
 
 
@@ -68,6 +68,7 @@ class JournalRepository:
             "total": result.count or 0,
             "page": page,
             "page_size": page_size,
+            "has_more": ((page - 1) * page_size + len(result.data or [])) < (result.count or 0)
         }
     
     def insert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
