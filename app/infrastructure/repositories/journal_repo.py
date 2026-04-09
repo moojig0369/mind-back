@@ -1,137 +1,113 @@
 """
-Journal domain repository.
-Data access layer for journal operations.
+Journal Repository - Database Access Layer
+Handles all direct database operations for Journal domain.
 """
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from app.infrastructure.models import JournalEntryDB, JournalStepDB
-from app.domains.journal.entities import JournalEntry
+from supabase import Client
 
 
 class JournalRepository:
-    """Repository for JournalEntry data access."""
+    """Repository for JournalEntry and related entities."""
     
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, db: Client):
+        self._db = db
     
-    async def get_by_id(self, entry_id: UUID, user_id: UUID) -> Optional[JournalEntry]:
-        """Get journal entry by ID and user ID."""
-        result = await self.session.execute(
-            select(JournalEntryDB).where(
-                JournalEntryDB.id == entry_id,
-                JournalEntryDB.user_id == user_id
-            )
+    # ── CRUD Operations ───────────────────────────────────────────────────────
+    
+    def count_by_user(self, user_id: str) -> int:
+        """Count total entries for a user."""
+        result = (
+            self._db.table("journal_entries")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
         )
-        db_model = result.scalar_one_or_none()
-        if not db_model:
-            return None
-        
-        return JournalEntry(
-            id=db_model.id,
-            user_id=db_model.user_id,
-            entry_index=db_model.entry_index,
-            is_text_saved=db_model.is_text_saved,
-            surface_text=db_model.surface_text,
-            inner_reaction_text=db_model.inner_reaction_text,
-            meaning_text=db_model.meaning_text,
-            created_at=db_model.created_at,
-        )
+        return result.count or 0
     
-    async def count_by_user(self, user_id: UUID) -> int:
-        """Count journal entries for a user."""
-        result = await self.session.execute(
-            select(func.count()).where(JournalEntryDB.user_id == user_id)
+    def find_by_id(self, entry_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Find single entry by ID with related data."""
+        result = (
+            self._db.table("journal_entries")
+            .select("*, seed_insights(*), journal_steps(*)")
+            .eq("id", entry_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
         )
-        return result.scalar() or 0
+        return result.data
     
-    async def list_by_user(
+    def find_by_user(
         self,
-        user_id: UUID,
+        user_id: str,
         page: int = 1,
         page_size: int = 20,
         search: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """List journal entries with pagination and optional search."""
-        query = select(JournalEntryDB).where(JournalEntryDB.user_id == user_id)
+        """Find entries by user with pagination and search."""
+        query = (
+            self._db.table("journal_entries")
+            .select("*", count="exact")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .range((page - 1) * page_size, page * page_size - 1)
+        )
         
         if search:
-            search_pattern = f"%{search}%"
-            query = query.where(
-                (JournalEntryDB.surface_text.ilike(search_pattern)) |
-                (JournalEntryDB.inner_reaction_text.ilike(search_pattern)) |
-                (JournalEntryDB.meaning_text.ilike(search_pattern))
+            query = query.or_(
+                f"surface_text.ilike.%{search}%,"
+                f"inner_reaction_text.ilike.%{search}%,"
+                f"meaning_text.ilike.%{search}%"
             )
         
-        # Get total count
-        count_query = select(func.count()).select_from(query.subquery())
-        total_result = await self.session.execute(count_query)
-        total = total_result.scalar() or 0
-        
-        # Apply pagination
-        query = query.order_by(JournalEntryDB.created_at.desc())
-        query = query.offset((page - 1) * page_size).limit(page_size)
-        
-        result = await self.session.execute(query)
-        db_models = result.scalars().all()
-        
-        items = [
-            JournalEntry(
-                id=m.id,
-                user_id=m.user_id,
-                entry_index=m.entry_index,
-                is_text_saved=m.is_text_saved,
-                surface_text=m.surface_text,
-                inner_reaction_text=m.inner_reaction_text,
-                meaning_text=m.meaning_text,
-                created_at=m.created_at,
-            )
-            for m in db_models
-        ]
+        result = query.execute()
         
         return {
-            "items": items,
-            "total": total,
+            "items": result.data or [],
+            "total": result.count or 0,
             "page": page,
             "page_size": page_size,
         }
     
-    async def create(self, entry: JournalEntry) -> JournalEntry:
-        """Create a new journal entry."""
-        db_model = JournalEntryDB(
-            id=entry.id,
-            user_id=entry.user_id,
-            entry_index=entry.entry_index,
-            is_text_saved=entry.is_text_saved,
-            surface_text=entry.surface_text,
-            inner_reaction_text=entry.inner_reaction_text,
-            meaning_text=entry.meaning_text,
-        )
-        
-        self.session.add(db_model)
-        await self.session.flush()  # Get generated fields
-        await self.session.refresh(db_model)
-        
-        # Update entity with DB values
-        entry.entry_index = db_model.entry_index
-        entry.created_at = db_model.created_at
-        
-        return entry
+    def insert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Insert new journal entry."""
+        result = self._db.table("journal_entries").insert(payload).execute()
+        return result.data[0]
     
-    async def delete(self, entry_id: UUID, user_id: UUID) -> bool:
-        """Delete a journal entry."""
-        result = await self.session.execute(
-            select(JournalEntryDB).where(
-                JournalEntryDB.id == entry_id,
-                JournalEntryDB.user_id == user_id
-            )
+    def delete(self, entry_id: str, user_id: str) -> bool:
+        """Delete entry by ID (CASCADE will handle related data)."""
+        result = (
+            self._db.table("journal_entries")
+            .delete()
+            .eq("id", entry_id)
+            .eq("user_id", user_id)
+            .execute()
         )
-        db_model = result.scalar_one_or_none()
-        
-        if not db_model:
-            return False
-        
-        await self.session.delete(db_model)
-        return True
+        return len(result.data) > 0
+    
+    # ── Seed Insights ─────────────────────────────────────────────────────────
+    
+    def save_seed_insight(self, entry_id: str, insight: Dict[str, Any]) -> Dict[str, Any]:
+        """Save seed insight for an entry."""
+        keys = ("mirror", "reframe", "relief", "summary")
+        payload = {"entry_id": entry_id, **{k: insight[k] for k in keys if k in insight}}
+        result = self._db.table("seed_insights").insert(payload).execute()
+        return result.data[0]
+    
+    # ── Journal Steps ─────────────────────────────────────────────────────────
+    
+    def save_journal_step(self, step_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Save journal step (surface → inner → meaning)."""
+        result = self._db.table("journal_steps").insert(step_data).execute()
+        return result.data[0]
+    
+    def find_steps_by_journal(self, journal_id: str) -> List[Dict[str, Any]]:
+        """Find all steps for a journal entry."""
+        result = (
+            self._db.table("journal_steps")
+            .select("*")
+            .eq("journal_id", journal_id)
+            .execute()
+        )
+        return result.data or []
