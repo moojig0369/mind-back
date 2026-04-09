@@ -7,7 +7,7 @@ from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from supabase import Client
 
-from app.db.supabase import get_admin_client, get_user_client
+from app.infrastructure.supabase_client import get_admin_client, get_user_client
 from app.infrastructure.repositories.journal_repo import JournalRepository
 from app.domains.journal.service import JournalService
 from app.infrastructure.ai.client import LLMClient
