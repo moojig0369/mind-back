@@ -251,7 +251,7 @@ class GraphBuilder:
 
         self._db.table("value_edges_tracker").insert({
             "edge_id":       edge_id,
-            "entry_id":      entry_id,
+            "journal_id":    entry_id,
             "hawkins_level": h_level,
             "hawkins_score": h_score,
         }).execute()
@@ -271,6 +271,8 @@ class GraphBuilder:
         - Хамгийн өндөр confidence-тай node → full primary + dyad авна
         - Бусад node → primary score нь confidence ratio-оор scale болно
         - Conflict flag → node-д тэмдэглэнэ
+        
+        Design class: ValueNodeEmotionTracker-тай нийцүүлсэн.
         """
         if not specs:
             return
@@ -279,34 +281,26 @@ class GraphBuilder:
         p           = analysis.plutchik
         is_conflict = getattr(p, "conflict_flag", False)
 
-        # Нэг SELECT-ээр бүх node-н emotion-г batch авна
-        node_ids = [node_map[k] for k in node_map]
-        emotion_map = self._batch_get_or_create_emotions(node_ids)
-
         for rank, spec in enumerate(specs):
             key     = (spec.category, spec.value)
             node_id = node_map.get(key)
             if not node_id:
                 continue
 
-            emotion_id = emotion_map[node_id]
-
             # Confidence ratio-оор score scale
             ratio        = spec.confidence / max_conf if max_conf > 0 else 1.0
             scaled_score = round(p.primary_score * ratio, 4)
 
             # Dyad зөвхөн top node-д
-            dyad       = p.dyad       if rank == 0 else None
-            dyad_score = p.dyad_score if rank == 0 else None
-
-            self._db.table("emotions_tracker").insert({
-                "emotion_id":       emotion_id,
-                "entry_id":         entry_id,
-                "plutchik_primary": p.primary,
-                "primary_score":    scaled_score,
-                "plutchik_dyad":    dyad,
-                "dyad_score":       dyad_score,
-                "is_conflict":      is_conflict,
+            secondary = p.secondary if rank == 0 else None
+            
+            # Design class: ValueNodeEmotionTracker
+            self._db.table("value_node_emotion_trackers").insert({
+                "node_id":          node_id,
+                "journal_id":       entry_id,
+                "primary_emotion":  p.primary,
+                "secondary_emotion": secondary,
+                "confidence_score": scaled_score,
             }).execute()
 
             if is_conflict:
@@ -314,49 +308,14 @@ class GraphBuilder:
                     "p_node_id": node_id,
                 }).execute()
 
-            self._update_dominant_emotion(emotion_id)
 
-    def _batch_get_or_create_emotions(
-        self,
-        node_ids: list[str],
-    ) -> dict[str, str]:
-        """
-        node_id жагсаалтад харгалзах emotion_id-г нэг SELECT-ээр авна.
-        Байхгүй node-уудад emotions мөр тус бүр insert хийнэ.
-
-        Returns:
-            {node_id: emotion_id}
-        """
-        # 1. Байгаа emotion-уудыг batch авна
-        existing_rows = (
-            self._db.table("emotions")
-            .select("id, value_node_id")
-            .in_("value_node_id", node_ids)
-            .execute()
-        ).data or []
-
-        emotion_map: dict[str, str] = {
-            r["value_node_id"]: r["id"]
-            for r in existing_rows
-        }
-
-        # 2. Байхгүй node-уудад insert хийнэ
-        missing = [nid for nid in node_ids if nid not in emotion_map]
-        for node_id in missing:
-            result = (
-                self._db.table("emotions")
-                .insert({"value_node_id": node_id, "total_entries": 0})
-                .execute()
-            )
-            emotion_map[node_id] = result.data[0]["id"]
-
-        return emotion_map
-
-    def _update_dominant_emotion(self, emotion_id: str) -> None:
+    def _update_dominant_emotion(self, node_id: str) -> None:
         """
         Сүүлийн _WINDOW_DAYS хоногийн tracker мэдээллээр
-        exponential decay-weighted dominant тооцоолж emotions шинэчилнэ.
+        exponential decay-weighted dominant тооцоолж value_nodes шинэчилнэ.
 
+        Design class: ValueNodeEmotionTracker-тай нийцүүлсэн.
+        
         decay = exp(-days_ago * ln(2) / half_life)
         → 30 хоногийн өмнөх утгын жин 0.5 болно
         """
@@ -365,12 +324,11 @@ class GraphBuilder:
         ).isoformat()
 
         rows = (
-            self._db.table("emotions_tracker")
+            self._db.table("value_node_emotion_trackers")
             .select(
-                "plutchik_primary, primary_score, "
-                "plutchik_dyad, dyad_score, created_at"
+                "primary_emotion, confidence_score, created_at"
             )
-            .eq("emotion_id", emotion_id)
+            .eq("node_id", node_id)
             .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(_TRACKER_LIMIT)
@@ -383,8 +341,7 @@ class GraphBuilder:
         now = datetime.now(timezone.utc)
         ln2 = math.log(2)
 
-        primary_totals: dict[str, float] = {}
-        dyad_totals:    dict[str, float] = {}
+        emotion_totals: dict[str, float] = {}
         total_weight = 0.0
 
         for r in rows:
@@ -392,41 +349,24 @@ class GraphBuilder:
             days_ago = (now - created).total_seconds() / 86400
             decay    = math.exp(-days_ago * ln2 / _HALF_LIFE_DAYS)
 
-            key = r["plutchik_primary"]
-            primary_totals[key] = (
-                primary_totals.get(key, 0) + r["primary_score"] * decay
+            key = r["primary_emotion"]
+            emotion_totals[key] = (
+                emotion_totals.get(key, 0) + r["confidence_score"] * decay
             )
             total_weight += decay
 
-            if r.get("plutchik_dyad") and r.get("dyad_score"):
-                dk = r["plutchik_dyad"]
-                dyad_totals[dk] = (
-                    dyad_totals.get(dk, 0) + r["dyad_score"] * decay
-                )
-
-        if not primary_totals or total_weight == 0:
+        if not emotion_totals or total_weight == 0:
             return
 
-        dominant_primary = max(primary_totals, key=primary_totals.__getitem__)
+        dominant_primary = max(emotion_totals, key=emotion_totals.__getitem__)
         dominant_primary_score = round(
-            primary_totals[dominant_primary] / total_weight, 3
+            emotion_totals[dominant_primary] / total_weight, 3
         )
 
-        dominant_dyad = (
-            max(dyad_totals, key=dyad_totals.__getitem__) if dyad_totals else None
-        )
-        dominant_dyad_score = (
-            round(dyad_totals[dominant_dyad] / total_weight, 3)
-            if dominant_dyad else None
-        )
-
-        self._db.table("emotions").update({
+        self._db.table("value_nodes").update({
             "dominant_primary":       dominant_primary,
             "dominant_primary_score": dominant_primary_score,
-            "dominant_dyad":          dominant_dyad,
-            "dominant_dyad_score":    dominant_dyad_score,
-            "total_entries":          len(rows),
-        }).eq("id", emotion_id).execute()
+        }).eq("id", node_id).execute()
 
 
 # ── Module-level helper ───────────────────────────────────────────────────────
