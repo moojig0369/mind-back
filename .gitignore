@@ -1,0 +1,34 @@
+# --- Google Cloud Keys (IMPORTANT) ---
+*.json
+!composer.json  # Хэрэв PHP ашигладаг бол үүнийг үлдээх
+gcp-key.json
+mind-step-key.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+build/
+dist/
+
+# --- Environment Variables ---
+.env
+.env.local
+.env.*.local
+
+# --- Docker ---
+.docker/
+# docker-compose.override.yml  # Хэрэв локал тохиргоо тусдаа бол нэмнэ
+
+# --- Editors & OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+arch
+archv2
