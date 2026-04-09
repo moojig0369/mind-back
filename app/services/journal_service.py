@@ -4,13 +4,20 @@ analysis хадгалалтын бизнес логик.
 
 ValueGraph болон EWMA тооцоолол нь тусдаа
 модульд (graph_builder.py, ewma.py) хуваарилагдсан.
+
+Design class-тай нийцүүлсэн:
+  - PsychometricAnalysis → psychometric_analyses хүснэгт
+  - AnalysisLog → analysis_logs хүснэгт
+  - ValueGraph → value_graphs хүснэгт
 """
 
 from supabase import Client
-from app.schemas.analysis import LlmAnalysisResult
+from app.schemas.analysis import LlmAnalysisResult, PsychometricAnalysisResult
 from app.schemas.entry import EntryCreateRequest
 from app.services.ewma import calculate as calculate_ewma
 from app.services.graph_builder import GraphBuilder
+import time
+from datetime import datetime, timezone
 
 _DEEP_INSIGHT_THRESHOLD = 10
 
@@ -64,7 +71,7 @@ class JournalService:
     def fetch_entry(self, entry_id: str, user_id: str) -> dict | None:
         result = (
             self._db.table("journal_entries")
-            .select("*, seed_insights(*), journal_analyses(*)")
+            .select("*, seed_insights(*), journal_steps(*)")
             .eq("id", entry_id)
             .eq("user_id", user_id)
             .single()
@@ -99,46 +106,83 @@ class JournalService:
         )
         return len(result.data) > 0
 
-    # ── Analysis ─────────────────────────────────────────────────────────────
+    # ── Analysis (Design class: PsychometricAnalysis) ────────────────────────
 
     def save_seed_insight(self, entry_id: str, insight: dict) -> dict:
         keys = ("mirror", "reframe", "relief", "summary")
         payload = {"entry_id": entry_id, **{k: insight[k] for k in keys}}
         return self._db.table("seed_insights").insert(payload).execute().data[0]
 
-    def save_analysis(self, entry_id: str, result: LlmAnalysisResult) -> dict:
-        p, h = result.plutchik, result.hawkins
+    def save_psychometric_analysis(
+        self, 
+        entry_id: str, 
+        result: PsychometricAnalysisResult,
+        llm_duration: float = 0.0,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        model_name: str = "",
+        error: str | None = None,
+    ) -> dict:
+        """
+        Design class: PsychometricAnalysis-тай тохирох шинэчлэл.
+        1. psychometric_analyses хүснэгтэд шинжилгээ хадгална
+        2. analysis_logs хүснэгтэд performance log нэмнэ
+        """
+        # 1. Psychometric Analysis
+        p_result = result.model_dump()
         payload = {
-            "entry_id": entry_id,
-            "maslow": result.maslow,
-            "plutchik_primary": p.primary,
-            "plutchik_dyad": p.dyad,
-            "plutchik_intensity": p.primary_score,
-            "hawkins_label": h.emotion,
-            "hawkins_level": h.level,
-            "hawkins_score": h.score,
+            "journal_id": entry_id,
+            "maslow_categories": [item["category"] for item in p_result.get("maslow", [])],
+            "plutchik_primary": p_result.get("plutchik_primary"),
+            "plutchik_dyad": p_result.get("plutchik_dyad"),
+            "hawkins_level": p_result.get("hawkins_level"),
+            "hawkins_label": p_result.get("hawkins_label"),
+            "hawkins_confidence": p_result.get("hawkins_confidence"),
         }
-        return (
-            self._db.table("journal_analyses").upsert(payload).execute().data[0]
-        )
+        
+        analysis_result = (
+            self._db.table("psychometric_analyses")
+            .upsert(payload)
+            .execute()
+        ).data[0]
+        
+        analysis_id = analysis_result["id"]
+        
+        # 2. Analysis Log (Design class: AnalysisLog)
+        if llm_duration > 0 or prompt_tokens > 0 or completion_tokens > 0:
+            self._db.table("analysis_logs").insert({
+                "analysis_id": analysis_id,
+                "model_name": model_name,
+                "duration": llm_duration,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "error": error,
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+            }).execute()
+        
+        return analysis_result
+
+    def save_analysis(self, entry_id: str, result: LlmAnalysisResult) -> dict:
+        """Backward compatibility wrapper."""
+        psych_result = result.to_psychometric()
+        return self.save_psychometric_analysis(entry_id, psych_result)
 
     def mark_analysis_processed(self, entry_id: str) -> None:
-        self._db.table("journal_analyses").update(
-            {"processed_at": "now()"}
-        ).eq("entry_id", entry_id).execute()
+        """Backward compatibility - одоо processed_at автоматаар хадгалагдана."""
+        pass
 
     # ── EWMA ─────────────────────────────────────────────────────────────────
 
     def get_user_ewma(self, user_id: str) -> float | None:
         """Хэрэглэгчийн сүүлийн 10 тэмдэглэлийн Хокинсын EWMA дундаж."""
         rows = (
-            self._db.table("journal_analyses")
+            self._db.table("psychometric_analyses")
             .select(
                 "hawkins_level,"
                 "journal_entries!inner(user_id)"
             )
             .eq("journal_entries.user_id", user_id)
-            .order("processed_at", desc=True)  # ← засвар
+            .order("created_at", desc=True)
             .limit(10)
             .execute()
         ).data or []
