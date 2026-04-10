@@ -31,9 +31,11 @@ class PsychometricAnalysisResponse(BaseModel):
     id: UUID
     journal_id: UUID
     maslow_categories: List[str]
+    emotions: List[str] = Field(default_factory=list)  # Array of emotions per UML
     plutchik_primary: Optional[str]
     plutchik_dyad: Optional[str]
     hawkins_level: Optional[int]
+    hawkins_label: Optional[str] = None  # Hawkins label per UML
     hawkins_confidence: Optional[float]
     created_at: datetime
     

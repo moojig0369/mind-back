@@ -27,9 +27,11 @@ class JournalEntryDB(Base):
     user_id = Column(PG_UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False, index=True)
     entry_index = Column(Integer, nullable=False)
     is_text_saved = Column(Boolean, default=False)
+    is_encrypted = Column(Boolean, default=False)  # Encryption flag per UML
     surface_text = Column(Text)
     inner_reaction_text = Column(Text)
     meaning_text = Column(Text)
+    embedding = Column(ARRAY(Float))  # Vector embedding for semantic search
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
@@ -50,10 +52,12 @@ class PsychometricAnalysisDB(Base):
     journal_id = Column(PG_UUID(as_uuid=True), ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     
     maslow_categories = Column(ARRAY(String))
+    emotions = Column(ARRAY(String))  # Array of emotion strings
+    hawkins_level = Column(Integer, ForeignKey("ref_hawkins.level"))
+    hawkins_label = Column(String)  # Hawkins label (e.g., "Courage", "Fear")
+    hawkins_confidence = Column(Float, CheckConstraint("hawkins_confidence BETWEEN 0 AND 1"))
     plutchik_primary = Column(String, ForeignKey("ref_plutchik.emotion_key"))
     plutchik_dyad = Column(String)
-    hawkins_level = Column(Integer, ForeignKey("ref_hawkins.level"))
-    hawkins_confidence = Column(Float, CheckConstraint("hawkins_confidence BETWEEN 0 AND 1"))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
