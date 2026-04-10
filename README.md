@@ -619,8 +619,8 @@ nodes.append('circle')
 
 #### API Layer
 - ✅ Auth routes (JWT login/register/me/refresh)
-- ✅ Journal routes (CRUD + analysis trigger)
-- ✅ **Graph routes (5 endpoints for visualization)** ⭐ NEW
+- ✅ Journal routes (CRUD + demo + analysis trigger)
+- ✅ **Graph routes (5 endpoints for visualization, merged under Journal tag)** ⭐ UPDATED
 - ✅ JWT dependency injection
 
 #### Domain Layer

@@ -122,6 +122,65 @@ async def create_entry(
     )
 
 
+@router.post("/demo", response_model=JournalCreateResponse, status_code=201)
+async def create_demo_entry(
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    service: JournalService = Depends(_get_journal_service),
+):
+    """
+    Create demo journal entry with predefined content for testing.
+    - Seed Insight: returned immediately (sync)
+    - Full Analysis: queued for background processing (async)
+    """
+    # Predefined demo content
+    demo_data = JournalCreateDTO(
+        surface_text="Өнөөдөр ажлын хурал дээр шинэ санаа гаргасан. Багийнхан маань сонирхолтой гэж хариулсан.",
+        inner_reaction_text="Эхлээд жаахан эмээсэн ч, дараа нь бахархалтай болсон. Миний бодол үнэ цэнэтэй гэдгийг ойлголоо.",
+        meaning_text="Би өөрийн гэсэн үзэл бодолтой, түүнийгээ илэрхийлэх эр зоригтой хүн юм байна.",
+        save_text=True,
+    )
+    
+    # 1. Create entry
+    entry = service.create_entry(user["id"], demo_data)
+    entry_id = entry["id"]
+    
+    # 2. Generate seed insight (sync)
+    llm = LLMClient()
+    seed_insight = await service.generate_seed_insight(
+        surface=demo_data.surface_text,
+        inner=demo_data.inner_reaction_text,
+        meaning=demo_data.meaning_text,
+    )
+    
+    # Save seed insight if not empty
+    if not seed_insight.is_empty():
+        service.save_seed_insight(entry_id, seed_insight)
+    
+    # 3. Queue full analysis (async)
+    background_tasks.add_task(
+        _enqueue_analysis,
+        entry_id=entry_id,
+        user_id=user["id"],
+        entry_text={
+            "surface": demo_data.surface_text,
+            "inner": demo_data.inner_reaction_text,
+            "meaning": demo_data.meaning_text,
+        },
+    )
+    
+    return JournalCreateResponse(
+        entry_id=UUID(entry_id),
+        seed_insight=SeedInsightResponse(
+            mirror=seed_insight.mirror,
+            reframe=seed_insight.reframe,
+            relief=seed_insight.relief,
+            summary=seed_insight.summary,
+        ),
+        analysis_channel=f"entry:{entry_id}",
+    )
+
+
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_entry(
     entry_id: str,
