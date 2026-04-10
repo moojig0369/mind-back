@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from rq import Worker, Queue
-from app.db.redis_client import get_redis_connection
+from app.infrastructure.redis_client import get_redis_connection
 
 logging.basicConfig(
     level=logging.INFO,
