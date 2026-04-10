@@ -346,6 +346,13 @@ MIT License
 - `JournalService.generate_deep_insight()` - LLM-powered deep analysis
 - `JournalService.trigger_deep_insight_if_needed()` - Automatic eligibility check
 
+#### 5. Authentication System (JWT with Supabase):
+- Created `app/api/v1/auth_routes.py` with 4 endpoints
+- Implemented login, register, get current user, refresh token
+- Updated `app/main.py` to include auth router
+- All routes now protected via JWT validation in `deps.get_current_user()`
+- Security model: Supabase Auth handles password hashing, JWT generation/validation
+
 ### 🔄 Workflow Pipeline:
 ```
 POST /api/v1/entries
@@ -363,15 +370,14 @@ POST /api/v1/entries
 ```
 
 ### 📊 Code Statistics:
-- **Total Python Files**: 49
+- **Total Python Files**: 52
 - **Domain Layer**: 12 files
 - **Infrastructure**: 15 files  
-- **API Layer**: 8 files (new graph_routes added)
-- **Workers**: 4 files (tasks.py newly added)
+- **API Layer**: 9 files (auth_routes newly added)
+- **Workers**: 4 files
 - **Test Suites**: 4
 
 ### ⚠️ Known Limitations:
-- Auth domain (User, Subscription, Plan) not yet implemented
 - Pattern detection logic is in planning phase
 - ValueGraph recalculate algorithm uses simplified version
 - Migration scripts need update (ValueNodeMaslowTracker, etc.)
@@ -381,3 +387,66 @@ POST /api/v1/entries
 - Redis 7+
 - PostgreSQL 13+ or Supabase account
 - Docker & Docker Compose (recommended)
+
+---
+
+## 🔐 Authentication (JWT with Supabase)
+
+### Security Model
+This application uses **Supabase Auth** for JWT-based authentication. No custom auth logic — all authentication is handled by Supabase's managed service.
+
+### How It Works:
+1. **Login/Register**: Users authenticate via `/api/v1/auth/login` or `/api/v1/auth/register`
+2. **JWT Token**: Supabase generates a signed JWT token
+3. **API Requests**: Client includes token in `Authorization: Bearer <token>` header
+4. **Verification**: API validates token via Supabase Auth on every request
+5. **User Context**: Extracts user ID from verified JWT for database queries
+
+### Endpoints:
+| Method | URL | Description |
+|---|---|---|
+| `POST` | `/api/v1/auth/login` | Login with email/password → returns JWT |
+| `POST` | `/api/v1/auth/register` | Register new user → returns JWT |
+| `GET` | `/api/v1/auth/me` | Get current user profile (requires JWT) |
+| `POST` | `/api/v1/auth/refresh` | Refresh JWT token (requires valid session) |
+
+### Protected Routes:
+All Journal and Graph API endpoints require valid JWT authentication:
+```bash
+curl -X GET "http://localhost:8000/api/v1/graph/summary" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Token Lifecycle:
+- **Access Token**: Valid for 1 hour (configurable in Supabase dashboard)
+- **Refresh Token**: Valid for 7 days (default)
+- **Auto-refresh**: Client should refresh token before expiration
+
+### Security Features:
+✅ Password hashing handled by Supabase (bcrypt)  
+✅ JWT signing with Supabase secret key  
+✅ Row-level security (RLS) available at database level  
+✅ CORS protection configured  
+✅ Rate limiting middleware applied  
+
+### Example Flow:
+```python
+# 1. Login
+response = requests.post("http://localhost:8000/api/v1/auth/login", json={
+    "email": "user@example.com",
+    "password": "securepassword"
+})
+token = response.json()["access_token"]
+
+# 2. Use token for protected routes
+headers = {"Authorization": f"Bearer {token}"}
+response = requests.get("http://localhost:8000/api/v1/journal/entries", headers=headers)
+```
+
+### Configuration:
+No additional setup required beyond Supabase project configuration:
+1. Enable Email/Password auth in Supabase Dashboard
+2. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env`
+3. Configure token expiry in Supabase Auth settings (optional)
+
+> ⚠️ **Important**: Never share your `SUPABASE_SERVICE_ROLE_KEY`. Keep it server-side only.
