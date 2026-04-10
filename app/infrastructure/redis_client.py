@@ -45,7 +45,12 @@ def get_redis_connection() -> redis.Redis:
 
 def get_analysis_queue() -> str:
     """Get the name of the analysis queue."""
-    return "journal:analysis:queue"
+    return "analysis"
+
+
+def get_deep_insight_queue() -> str:
+    """Get the name of the deep insight queue."""
+    return "deep_insight"
 
 
 def init_redis(redis_url: str):

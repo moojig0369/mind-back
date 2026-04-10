@@ -137,4 +137,26 @@ async def delete_entry(
 
 def _enqueue_analysis(entry_id: str, user_id: str, entry_text: dict) -> None:
     """Enqueue psychometric analysis job to RQ worker."""
-    run_psychometric_analysis.delay(entry_id=entry_id, user_id=user_id, entry_text=entry_text)
+    from app.workers.tasks import run_psychometric_analysis
+    
+    # Use RQ queue directly
+    from rq import Queue
+    from redis import Redis
+    from app.core.settings import settings
+
+    redis_client = Redis.from_url(settings.redis_url)
+    queue = Queue("analysis", connection=redis_client)
+    queue.enqueue(
+        run_psychometric_analysis,
+        entry_id=entry_id,
+        user_id=user_id,
+        entry_text=entry_text,
+        job_timeout=120,
+    )
+    
+    # After analysis completes, check if Deep Insight should be scheduled
+    queue.enqueue(
+        "app.workers.tasks.schedule_deep_insight",
+        user_id=user_id,
+        depends_on=None,  # Will run after this job
+    )
