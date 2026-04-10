@@ -72,20 +72,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         await session.close()
 
 
-def init_database(supabase_url: str):
+def init_database(database_url: str):
     """Initialize database connection from settings."""
-    # Convert Supabase URL to PostgreSQL async URL
-    # Format: postgresql+asyncpg://user:pass@host:port/dbname
-    if "supabase.co" in supabase_url:
-        # Extract credentials from Supabase URL
-        # https://xxx.supabase.co -> postgresql+asyncpg://postgres:password@aws-0-region.pooler.supabase.com:6543/postgres
-        db_host = supabase_url.replace("https://", "").replace(".supabase.co", "")
+    # Database URL should already be properly formatted
+    # If it's a Supabase URL, convert to PostgreSQL async URL
+    if "supabase.co" in database_url and not database_url.startswith("postgresql"):
+        # This case should not happen if using Settings.database_url
+        # But handle it for backward compatibility
+        db_host = database_url.replace("https://", "").replace(".supabase.co", "")
         settings = get_settings()
         database_url = (
             f"postgresql+asyncpg://postgres:{settings.supabase_key}@"
             f"{db_host}.pooler.supabase.com:6543/postgres"
         )
-    else:
-        database_url = supabase_url.replace("postgres://", "postgresql+asyncpg://")
+    elif database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+asyncpg://")
     
     db.init(database_url)
