@@ -27,6 +27,13 @@ logging.basicConfig(
 _QUEUES = ["seed", "analysis", "deep_insight"]
 
 if __name__ == "__main__":
+    # Initialize Redis connection first
+    from app.infrastructure.redis_client import init_redis
+    from app.core.settings import get_settings
+    
+    settings = get_settings()
+    init_redis(settings.redis_url)
+    
     conn = get_redis_connection()
     queues = [Queue(name, connection=conn) for name in _QUEUES]
     logging.getLogger(__name__).info(
