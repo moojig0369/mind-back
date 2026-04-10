@@ -4,10 +4,29 @@ Orchestrates repository operations and domain rules.
 """
 
 from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
 from app.domains.journal.entities import JournalEntry, SeedInsight
 from app.domains.journal.schemas import JournalCreateRequest
 from app.infrastructure.repositories.journal_repo import JournalRepository
+from app.infrastructure.repositories.analysis_repo import AnalysisRepository
 from app.infrastructure.ai.client import LLMClient
+
+
+@dataclass
+class AnalysisResult:
+    """Шинжилгээний үр дүн."""
+    hawkins_level: int
+    hawkins_label_en: str
+    hawkins_label_mn: str
+    plutchik_primary: str
+    plutchik_dyad: Optional[str]
+    maslow_categories: List[str]
+    crisis_flag: bool
+    confidence: float
+    reasoning: str
+    ewma_score: float
+    trend: str
+    raw_response: Dict[str, Any]
 
 
 class JournalService:
@@ -16,9 +35,15 @@ class JournalService:
     Handles business logic for journal entries.
     """
     
-    def __init__(self, repo: JournalRepository, llm_client: Optional[LLMClient] = None):
+    def __init__(
+        self, 
+        repo: JournalRepository, 
+        llm_client: Optional[LLMClient] = None,
+        analysis_repo: Optional[AnalysisRepository] = None
+    ):
         self._repo = repo
         self._llm = llm_client
+        self._analysis_repo = analysis_repo
     
     # ── Entry Operations ───────────────────────────────────────────────────────
     
@@ -96,6 +121,228 @@ class JournalService:
     ) -> Dict[str, Any]:
         """Save seed insight to database."""
         return self._repo.save_seed_insight(entry_id, insight.model_dump())
+    
+    # ── Psychometric Analysis Operations ──────────────────────────────────────
+    
+    async def run_analysis(
+        self,
+        surface: str,
+        inner: str,
+        meaning: str,
+        ewma_previous: Optional[float] = None,
+        entry_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> AnalysisResult:
+        """
+        Гүн шинжилгээ хийх: Hawkins + Plutchik + Maslow.
+        LLM-ээр шинжилгээ хийж, EWMA тооцоолно.
+        """
+        if not self._llm:
+            raise ValueError("LLM client not configured")
+        
+        # LLM шинжилгээ
+        raw = await self._llm.analyze_psychometrics(
+            surface=surface,
+            inner=inner,
+            meaning=meaning,
+            ewma_previous=ewma_previous,
+        )
+        
+        # EWMA тооцоолол (α = 0.3)
+        alpha = 0.3
+        hawkins_level = raw.get("hawkins_level", 200)
+        
+        if ewma_previous is None:
+            ewma_score = float(hawkins_level)
+        else:
+            ewma_score = alpha * hawkins_level + (1 - alpha) * ewma_previous
+        
+        # Trend тодорхойлох
+        if ewma_previous is None:
+            trend = "stable"
+        elif ewma_score > ewma_previous * 1.1:
+            trend = "improving"
+        elif ewma_score < ewma_previous * 0.9:
+            trend = "declining"
+        else:
+            trend = "stable"
+        
+        return AnalysisResult(
+            hawkins_level=hawkins_level,
+            hawkins_label_en=raw.get("hawkins_label_en", "Unknown"),
+            hawkins_label_mn=raw.get("hawkins_label_mn", "Тодорхойгүй"),
+            plutchik_primary=raw.get("plutchik_primary", "joy"),
+            plutchik_dyad=raw.get("plutchik_dyad"),
+            maslow_categories=raw.get("maslow_categories", ["social"]),
+            crisis_flag=raw.get("crisis_flag", False),
+            confidence=raw.get("confidence", 0.5),
+            reasoning=raw.get("reasoning", ""),
+            ewma_score=ewma_score,
+            trend=trend,
+            raw_response=raw,
+        )
+    
+    def save_analysis(
+        self,
+        entry_id: str,
+        result: AnalysisResult,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Шинжилгээний үр дүнг database-д хадгална."""
+        if not self._analysis_repo:
+            raise ValueError("AnalysisRepository not configured")
+        
+        import asyncio
+        from app.infrastructure.supabase_client import get_admin_client
+        
+        db = get_admin_client()
+        # Sync context-ээс async дуудах
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            analysis = loop.run_until_complete(
+                self._analysis_repo.create_analysis(
+                    user_id=user_id or "",
+                    entry_id=entry_id,
+                    hawkins_level=result.hawkins_level,
+                    hawkins_label_en=result.hawkins_label_en,
+                    hawkins_label_mn=result.hawkins_label_mn,
+                    plutchik_emotions=[result.plutchik_primary],
+                    maslow_categories=result.maslow_categories,
+                    ewma_score=result.ewma_score,
+                    trend=result.trend,
+                    raw_response=str(result.raw_response),
+                )
+            )
+            return {"id": analysis.id, "status": "saved"}
+        finally:
+            loop.close()
+    
+    def mark_analysis_processed(self, entry_id: str):
+        """Шинжилгээг 'processed' төлөвт шилжүүлнэ."""
+        if not self._analysis_repo:
+            raise ValueError("AnalysisRepository not configured")
+        
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            # Entry ID-ээр analysis олох хэрэгтэй (одоогоор placeholder)
+            loop.run_until_complete(
+                self._analysis_repo.mark_as_processed(entry_id)
+            )
+        finally:
+            loop.close()
+    
+    def get_user_ewma(self, user_id: str) -> Optional[float]:
+        """Хэрэглэгчийн сүүлийн EWMA утгыг авна."""
+        if not self._analysis_repo:
+            return None
+        
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            return loop.run_until_complete(
+                self._analysis_repo.get_user_ewma(user_id)
+            )
+        finally:
+            loop.close()
+    
+    def count_user_entries(self, user_id: str) -> int:
+        """Хэрэглэгчийн нийт бичлэгийн тоог авна."""
+        if not self._analysis_repo:
+            return 0
+        
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            return loop.run_until_complete(
+                self._analysis_repo.count_user_entries(user_id)
+            )
+        finally:
+            loop.close()
+    
+    def update_value_nodes(
+        self,
+        user_id: str,
+        result: AnalysisResult,
+        entry_id: str,
+    ):
+        """ValueNode-уудыг Maslow code-оор шинэчилнэ."""
+        if not self._analysis_repo:
+            raise ValueError("AnalysisRepository not configured")
+        
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            # Эхний Maslow category-г гол болгож ашиглана
+            if result.maslow_categories:
+                primary_maslow = result.maslow_categories[0]
+                
+                # ValueNode олох (entry_id-ээр)
+                # Энэ нь journal_repo-оос хамаарна
+                nodes = self._repo.find_value_nodes_by_entry(entry_id)
+                
+                for node in nodes:
+                    loop.run_until_complete(
+                        self._analysis_repo.update_value_node_maslow(
+                            node_id=node["id"],
+                            maslow_code=primary_maslow,
+                        )
+                    )
+                    
+                    # Tracker үүсгэх
+                    loop.run_until_complete(
+                        self._analysis_repo.create_maslow_tracker(
+                            node_id=node["id"],
+                            maslow_code=primary_maslow,
+                            confidence=result.confidence,
+                        )
+                    )
+        finally:
+            loop.close()
+    
+    # ── Deep Insight Operations ───────────────────────────────────────────────
+    
+    def build_graph_summary(self, user_id: str) -> Dict[str, Any]:
+        """ValueGraph-ийн товчлолыг үүсгэнэ."""
+        # TODO: Value graph-ээс өгөгдөл цуглуулах
+        return {
+            "user_id": user_id,
+            "total_nodes": 0,
+            "dominant_themes": [],
+            "emotional_pattern": "unknown",
+        }
+    
+    async def generate_deep_insight(
+        self,
+        summary: Dict[str, Any],
+        entry_count: int,
+    ) -> Dict[str, Any]:
+        """Гүн шинжилгээний insight үүсгэнэ."""
+        if not self._llm:
+            raise ValueError("LLM client not configured")
+        
+        prompt = f"""
+Хэрэглэгчийн {entry_count} бичлэгийн дүн шинжилгээ:
+{summary}
+
+Дараах форматтай гүн шинжилгээний insight үүсгэ:
+{{
+  "insight_text": "<гурван өгүүлбэртэй гүн утга учир>",
+  "recommendations": ["<зөвлөгөө 1>", "<зөвлөгөө 2>", "<зөвлөгөө 3>"]
+}}
+"""
+        
+        return await self._llm.generate_json(prompt)
     
     # ── Business Rules ─────────────────────────────────────────────────────────
     

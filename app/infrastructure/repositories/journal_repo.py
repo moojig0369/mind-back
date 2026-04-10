@@ -112,3 +112,15 @@ class JournalRepository:
             .execute()
         )
         return result.data or []
+    
+    # ── Value Nodes ────────────────────────────────────────────────────────────
+    
+    def find_value_nodes_by_entry(self, entry_id: str) -> List[Dict[str, Any]]:
+        """Find value nodes created from a journal entry."""
+        result = (
+            self._db.table("value_nodes")
+            .select("*")
+            .eq("source_entry_id", entry_id)
+            .execute()
+        )
+        return result.data or []
