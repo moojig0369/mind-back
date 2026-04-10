@@ -19,9 +19,11 @@ class JournalEntry:
     user_id: UUID
     entry_index: int = 0
     is_text_saved: bool = True
+    is_encrypted: bool = False  # Encryption flag per UML
     surface_text: Optional[str] = None
     inner_reaction_text: Optional[str] = None
     meaning_text: Optional[str] = None
+    embedding: Optional[List[float]] = None  # Vector embedding for semantic search
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=datetime.utcnow)
     
@@ -113,3 +115,4 @@ class AnalysisResult:
     ewma_score: float
     trend: str
     raw_response: dict
+    emotions: List[str] = field(default_factory=list)  # Array of emotions per UML
