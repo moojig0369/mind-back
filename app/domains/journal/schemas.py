@@ -1,5 +1,7 @@
 """
-Journal Domain Schemas - API Request/Response Models
+Journal API Schemas - Request/Response Models for API Layer
+These are Pydantic models used ONLY for API validation and serialization.
+Domain logic should NOT depend on these.
 """
 
 from datetime import datetime
@@ -7,6 +9,8 @@ from uuid import UUID
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
+
+# ── Request Schemas ────────────────────────────────────────────────────────────
 
 class JournalCreateRequest(BaseModel):
     """Тэмдэглэл үүсгэх хүсэлт."""
@@ -22,6 +26,8 @@ class JournalUpdateRequest(BaseModel):
     inner_reaction_text: Optional[str] = Field(None, max_length=5000)
     meaning_text: Optional[str] = Field(None, max_length=5000)
 
+
+# ── Response Schemas ───────────────────────────────────────────────────────────
 
 class JournalResponse(BaseModel):
     """Тэмдэглэлийн хариу."""

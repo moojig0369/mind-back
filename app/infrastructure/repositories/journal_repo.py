@@ -2,13 +2,18 @@
 Journal Repository - Database Access Layer
 Handles all direct database operations for Journal domain.
 Uses Supabase client for database access.
+
+This repository implements the JournalRepositoryInterface.
 """
 
 from typing import Optional, List, Dict, Any
+from uuid import UUID
 from supabase import Client
 
+from app.domains.journal.repository_interface import JournalRepositoryInterface
 
-class JournalRepository:
+
+class JournalRepository(JournalRepositoryInterface):
     """Repository for JournalEntry and related entities."""
     
     def __init__(self, db: Client):
@@ -16,23 +21,23 @@ class JournalRepository:
     
     # ── CRUD Operations ───────────────────────────────────────────────────────
     
-    def count_by_user(self, user_id: str) -> int:
+    def count_by_user(self, user_id: UUID) -> int:
         """Count total entries for a user."""
         result = (
             self._db.table("journal_entries")
             .select("id", count="exact")
-            .eq("user_id", user_id)
+            .eq("user_id", str(user_id))
             .execute()
         )
         return result.count or 0
     
-    def find_by_id(self, entry_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    def find_by_id(self, entry_id: UUID, user_id: UUID) -> Optional[Dict[str, Any]]:
         """Find single entry by ID with related data."""
         result = (
             self._db.table("journal_entries")
             .select("*, seed_insights(*), journal_steps(*)")
-            .eq("id", entry_id)
-            .eq("user_id", user_id)
+            .eq("id", str(entry_id))
+            .eq("user_id", str(user_id))
             .single()
             .execute()
         )
@@ -40,7 +45,7 @@ class JournalRepository:
     
     def find_by_user(
         self,
-        user_id: str,
+        user_id: UUID,
         page: int = 1,
         page_size: int = 20,
         search: Optional[str] = None,
@@ -49,7 +54,7 @@ class JournalRepository:
         query = (
             self._db.table("journal_entries")
             .select("*", count="exact")
-            .eq("user_id", user_id)
+            .eq("user_id", str(user_id))
             .order("created_at", desc=True)
             .range((page - 1) * page_size, page * page_size - 1)
         )
@@ -76,23 +81,23 @@ class JournalRepository:
         result = self._db.table("journal_entries").insert(payload).execute()
         return result.data[0]
     
-    def delete(self, entry_id: str, user_id: str) -> bool:
+    def delete(self, entry_id: UUID, user_id: UUID) -> bool:
         """Delete entry by ID (CASCADE will handle related data)."""
         result = (
             self._db.table("journal_entries")
             .delete()
-            .eq("id", entry_id)
-            .eq("user_id", user_id)
+            .eq("id", str(entry_id))
+            .eq("user_id", str(user_id))
             .execute()
         )
         return len(result.data) > 0
     
     # ── Seed Insights ─────────────────────────────────────────────────────────
     
-    def save_seed_insight(self, entry_id: str, insight: Dict[str, Any]) -> Dict[str, Any]:
+    def save_seed_insight(self, entry_id: UUID, insight: Dict[str, Any]) -> Dict[str, Any]:
         """Save seed insight for an entry."""
         keys = ("mirror", "reframe", "relief", "summary")
-        payload = {"entry_id": entry_id, **{k: insight[k] for k in keys if k in insight}}
+        payload = {"entry_id": str(entry_id), **{k: insight[k] for k in keys if k in insight}}
         result = self._db.table("seed_insights").insert(payload).execute()
         return result.data[0]
     
@@ -103,24 +108,24 @@ class JournalRepository:
         result = self._db.table("journal_steps").insert(step_data).execute()
         return result.data[0]
     
-    def find_steps_by_journal(self, journal_id: str) -> List[Dict[str, Any]]:
+    def find_steps_by_journal(self, journal_id: UUID) -> List[Dict[str, Any]]:
         """Find all steps for a journal entry."""
         result = (
             self._db.table("journal_steps")
             .select("*")
-            .eq("journal_id", journal_id)
+            .eq("journal_id", str(journal_id))
             .execute()
         )
         return result.data or []
     
     # ── Value Nodes ────────────────────────────────────────────────────────────
     
-    def find_value_nodes_by_entry(self, entry_id: str) -> List[Dict[str, Any]]:
+    def find_value_nodes_by_entry(self, entry_id: UUID) -> List[Dict[str, Any]]:
         """Find value nodes created from a journal entry."""
         result = (
             self._db.table("value_nodes")
             .select("*")
-            .eq("source_entry_id", entry_id)
+            .eq("source_entry_id", str(entry_id))
             .execute()
         )
         return result.data or []

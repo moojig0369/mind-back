@@ -1,15 +1,21 @@
 """
 Journal Domain Service - Business Logic Layer
 Orchestrates repository operations and domain rules.
+Uses repository interfaces for flexibility and testability.
 """
 
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from app.domains.journal.entities import JournalEntry, SeedInsight
+from uuid import UUID
+
+from app.domains.journal.entities import JournalEntry, SeedInsight, AnalysisResult
 from app.domains.journal.schemas import JournalCreateRequest
-from app.infrastructure.repositories.journal_repo import JournalRepository
-from app.infrastructure.repositories.analysis_repo import AnalysisRepository
+from app.domains.journal.repository_interface import (
+    JournalRepositoryInterface,
+    AnalysisRepositoryInterface,
+)
 from app.infrastructure.ai.client import LLMClient
+import asyncio
 
 
 @dataclass
@@ -33,13 +39,14 @@ class JournalService:
     """
     Journal domain service.
     Handles business logic for journal entries.
+    Depends on repository interfaces, not concrete implementations.
     """
     
     def __init__(
         self, 
-        repo: JournalRepository, 
+        repo: JournalRepositoryInterface, 
         llm_client: Optional[LLMClient] = None,
-        analysis_repo: Optional[AnalysisRepository] = None
+        analysis_repo: Optional[AnalysisRepositoryInterface] = None
     ):
         self._repo = repo
         self._llm = llm_client
@@ -53,7 +60,7 @@ class JournalService:
         data: JournalCreateRequest
     ) -> Dict[str, Any]:
         """Create new journal entry."""
-        index = self._repo.count_by_user(user_id) + 1
+        index = self._repo.count_by_user(UUID(user_id)) + 1
         
         payload = {
             "user_id": user_id,
@@ -78,15 +85,20 @@ class JournalService:
         search: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get paginated entries for user."""
-        return self._repo.find_by_user(user_id, page, page_size, search)
+        return self._repo.find_by_user(
+            UUID(user_id), 
+            page, 
+            page_size, 
+            search
+        )
     
     def get_entry(self, entry_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """Get single entry with related data."""
-        return self._repo.find_by_id(entry_id, user_id)
+        return self._repo.find_by_id(UUID(entry_id), UUID(user_id))
     
     def delete_entry(self, entry_id: str, user_id: str) -> bool:
         """Delete entry (CASCADE handles related data)."""
-        return self._repo.delete(entry_id, user_id)
+        return self._repo.delete(UUID(entry_id), UUID(user_id))
     
     # ── Seed Insight Operations ───────────────────────────────────────────────
     
@@ -120,7 +132,10 @@ class JournalService:
         insight: SeedInsight
     ) -> Dict[str, Any]:
         """Save seed insight to database."""
-        return self._repo.save_seed_insight(entry_id, insight.model_dump())
+        return self._repo.save_seed_insight(
+            UUID(entry_id), 
+            insight.__dict__
+        )
     
     # ── Psychometric Analysis Operations ──────────────────────────────────────
     
@@ -258,7 +273,7 @@ class JournalService:
             
             # ValueNode олох (entry_id-ээр)
             # Энэ нь journal_repo-оос хамаарна
-            nodes = self._repo.find_value_nodes_by_entry(entry_id)
+            nodes = self._repo.find_value_nodes_by_entry(UUID(entry_id))
             
             for node in nodes:
                 # Use asyncio.run for proper async execution in sync context
