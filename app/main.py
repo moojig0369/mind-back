@@ -34,8 +34,7 @@ app.middleware("http")(apply_rate_limit)
 
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=_settings.cors_origins_list,
-    allow_origins= ["*"],
+    allow_origins=_settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,9 +79,9 @@ async def on_startup():
         f" | model={_settings.llm_model}"
     )
     
-    # Initialize database
+    # Initialize database with properly constructed URL
     try:
-        init_database(_settings.supabase_url)
+        init_database(_settings.database_url)
         logger.info("✅ Database initialized")
     except Exception as exc:
         logger.error(f"❌ Database initialization failed: {exc}")

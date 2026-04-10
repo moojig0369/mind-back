@@ -5,7 +5,7 @@ Production-ready settings with environment validation.
 
 from functools import lru_cache
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -18,15 +18,15 @@ class Settings(BaseSettings):
     
     # Database (Supabase)
     supabase_url: str
-    supabase_key: str
+    supabase_key: str  # Service role key for admin operations
     supabase_anon_key: str
     
     # Redis
     redis_url: str = "redis://localhost:6379/0"
     
     # LLM (OpenAI or Vertex AI)
-    llm_base_url: str | None = None
-    llm_api_key: str | None = None
+    llm_base_url: Optional[str] = None
+    llm_api_key: Optional[str] = None
     llm_model: str = "gpt-4o"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 2000
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 100
     rate_limit_window: int = 60  # seconds
     
-    # Background Jobs
+    # Background Jobs (RQ)
     job_queue_name: str = "journal_jobs"
     job_max_retries: int = 3
     job_timeout_seconds: int = 300
@@ -52,6 +52,20 @@ class Settings(BaseSettings):
         if self.cors_origins == "*":
             return ["*"]
         return [origin.strip() for origin in self.cors_origins.split(",")]
+    
+    @property
+    def database_url(self) -> str:
+        """Construct async PostgreSQL URL from Supabase credentials."""
+        if "supabase.co" in self.supabase_url:
+            # Extract project ID from Supabase URL
+            db_host = self.supabase_url.replace("https://", "").replace(".supabase.co", "")
+            # Use service role key for database password
+            return (
+                f"postgresql+asyncpg://postgres:{self.supabase_key}@"
+                f"{db_host}.pooler.supabase.com:6543/postgres"
+            )
+        # Fallback for direct PostgreSQL URLs
+        return self.supabase_url.replace("postgres://", "postgresql+asyncpg://")
     
     class Config:
         env_file = ".env"

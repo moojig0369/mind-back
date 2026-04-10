@@ -192,81 +192,55 @@ class JournalService:
         if not self._analysis_repo:
             raise ValueError("AnalysisRepository not configured")
         
-        import asyncio
         from app.infrastructure.supabase_client import get_admin_client
         
         db = get_admin_client()
-        # Sync context-ээс async дуудах
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            analysis = loop.run_until_complete(
-                self._analysis_repo.create_analysis(
-                    user_id=user_id or "",
-                    entry_id=entry_id,
-                    hawkins_level=result.hawkins_level,
-                    hawkins_label_en=result.hawkins_label_en,
-                    hawkins_label_mn=result.hawkins_label_mn,
-                    plutchik_emotions=[result.plutchik_primary],
-                    maslow_categories=result.maslow_categories,
-                    ewma_score=result.ewma_score,
-                    trend=result.trend,
-                    raw_response=str(result.raw_response),
-                )
+        # Use asyncio.run for proper async execution in sync context
+        analysis = asyncio.run(
+            self._analysis_repo.create_analysis(
+                user_id=user_id or "",
+                entry_id=entry_id,
+                hawkins_level=result.hawkins_level,
+                hawkins_label_en=result.hawkins_label_en,
+                hawkins_label_mn=result.hawkins_label_mn,
+                plutchik_emotions=[result.plutchik_primary],
+                maslow_categories=result.maslow_categories,
+                ewma_score=result.ewma_score,
+                trend=result.trend,
+                raw_response=str(result.raw_response),
             )
-            return {"id": analysis.id, "status": "saved"}
-        finally:
-            loop.close()
+        )
+        return {"id": analysis.id, "status": "saved"}
     
     def mark_analysis_processed(self, entry_id: str):
         """Шинжилгээг 'processed' төлөвт шилжүүлнэ."""
         if not self._analysis_repo:
             raise ValueError("AnalysisRepository not configured")
         
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Entry ID-ээр analysis олох хэрэгтэй (одоогоор placeholder)
-            loop.run_until_complete(
-                self._analysis_repo.mark_as_processed(entry_id)
-            )
-        finally:
-            loop.close()
+        # Use asyncio.run for proper async execution in sync context
+        asyncio.run(
+            self._analysis_repo.mark_as_processed(entry_id)
+        )
     
     def get_user_ewma(self, user_id: str) -> Optional[float]:
         """Хэрэглэгчийн сүүлийн EWMA утгыг авна."""
         if not self._analysis_repo:
             return None
         
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            return loop.run_until_complete(
-                self._analysis_repo.get_user_ewma(user_id)
-            )
-        finally:
-            loop.close()
+        # Use asyncio.run for proper async execution in sync context
+        return asyncio.run(
+            self._analysis_repo.get_user_ewma(user_id)
+        )
     
     def count_user_entries(self, user_id: str) -> int:
         """Хэрэглэгчийн нийт бичлэгийн тоог авна."""
         if not self._analysis_repo:
             return 0
         
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            return loop.run_until_complete(
-                self._analysis_repo.count_user_entries(user_id)
-            )
-        finally:
-            loop.close()
+        # Use asyncio.run for proper async execution in sync context
+        return asyncio.run(
+            self._analysis_repo.count_user_entries(user_id)
+        )
     
     def update_value_nodes(
         self,
@@ -278,37 +252,31 @@ class JournalService:
         if not self._analysis_repo:
             raise ValueError("AnalysisRepository not configured")
         
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Эхний Maslow category-г гол болгож ашиглана
-            if result.maslow_categories:
-                primary_maslow = result.maslow_categories[0]
-                
-                # ValueNode олох (entry_id-ээр)
-                # Энэ нь journal_repo-оос хамаарна
-                nodes = self._repo.find_value_nodes_by_entry(entry_id)
-                
-                for node in nodes:
-                    loop.run_until_complete(
-                        self._analysis_repo.update_value_node_maslow(
-                            node_id=node["id"],
-                            maslow_code=primary_maslow,
-                        )
+        # Эхний Maslow category-г гол болгож ашиглана
+        if result.maslow_categories:
+            primary_maslow = result.maslow_categories[0]
+            
+            # ValueNode олох (entry_id-ээр)
+            # Энэ нь journal_repo-оос хамаарна
+            nodes = self._repo.find_value_nodes_by_entry(entry_id)
+            
+            for node in nodes:
+                # Use asyncio.run for proper async execution in sync context
+                asyncio.run(
+                    self._analysis_repo.update_value_node_maslow(
+                        node_id=node["id"],
+                        maslow_code=primary_maslow,
                     )
-                    
-                    # Tracker үүсгэх
-                    loop.run_until_complete(
-                        self._analysis_repo.create_maslow_tracker(
-                            node_id=node["id"],
-                            maslow_code=primary_maslow,
-                            confidence=result.confidence,
-                        )
+                )
+                
+                # Tracker үүсгэх
+                asyncio.run(
+                    self._analysis_repo.create_maslow_tracker(
+                        node_id=node["id"],
+                        maslow_code=primary_maslow,
+                        confidence=result.confidence,
                     )
-        finally:
-            loop.close()
+                )
     
     # ── Deep Insight Operations ───────────────────────────────────────────────
     
