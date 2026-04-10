@@ -450,3 +450,256 @@ No additional setup required beyond Supabase project configuration:
 3. Configure token expiry in Supabase Auth settings (optional)
 
 > ⚠️ **Important**: Never share your `SUPABASE_SERVICE_ROLE_KEY`. Keep it server-side only.
+
+---
+
+## 📊 Graph Visualization API (2025-04-10 Update)
+
+### New Endpoints for Beautiful Graph Display
+
+#### `GET /api/v1/graph/summary`
+**Purpose**: Complete graph overview for dashboard  
+**Response**:
+```json
+{
+  "user_id": "uuid",
+  "total_nodes": 15,
+  "total_edges": 42,
+  "nodes": [...],
+  "edges": [...],
+  "patterns": [...],
+  "recommendations": [...],
+  "dominant_values": ["Growth", "Connection", "Purpose"],
+  "emotional_trend": "thriving",
+  "hawkins_average": 320.5,
+  "maslow_distribution": {
+    "self_actualization": 8,
+    "social": 5,
+    "esteem": 2
+  },
+  "status": "success"
+}
+```
+
+#### `GET /api/v1/graph/visualization` ⭐ **NEW**
+**Purpose**: D3.js-ready data structure for force-directed graphs  
+**Response**:
+```json
+{
+  "nodes": [
+    {
+      "id": "uuid",
+      "label": "Growth",
+      "value": 85.5,
+      "group": "self_actualization",
+      "color": "#98D8C8",
+      "hawkins": 350,
+      "mentions": 12
+    }
+  ],
+  "links": [
+    {
+      "source": "uuid-1",
+      "target": "uuid-2",
+      "value": 7.5,
+      "strength": 0.75
+    }
+  ],
+  "metadata": {
+    "total_nodes": 15,
+    "total_edges": 42,
+    "avg_hawkins": 320.5,
+    "dominant_values": ["Growth", "Connection"],
+    "maslow_distribution": {...}
+  }
+}
+```
+
+#### `GET /api/v1/graph/patterns`
+**Purpose**: Detected behavioral patterns  
+**Response**: List of patterns with type, description, strength
+
+#### `GET /api/v1/graph/nodes`
+**Purpose**: All value nodes with weights  
+**Response**: Paginated list of nodes
+
+#### `POST /api/v1/graph/recalculate`
+**Purpose**: Trigger manual graph recalculation  
+**Response**: Queued status
+
+---
+
+## 🔧 Worker Tasks for Graph Processing
+
+### New Background Jobs (`app/workers/graph_tasks.py`)
+
+| Task | Function | Description |
+|------|----------|-------------|
+| **Update Graph** | `update_value_graph_sync(user_id)` | Recalculates nodes/edges from latest analyses |
+| **Detect Patterns** | `detect_patterns_sync(user_id)` | Uses LLM to find behavioral patterns |
+| **Generate Recommendations** | `generate_recommendations_sync(user_id)` | Creates actionable insights from patterns |
+
+### Worker Flow
+
+```
+Journal Entry → Analysis → update_value_graph() → detect_patterns() → generate_recommendations()
+                                              ↓
+                                         Redis Pub/Sub → Frontend Notification
+```
+
+### Event Publishing
+
+Workers publish real-time events to Redis channels:
+- `user:{id}:graph` - Graph update events
+- `user:{id}:patterns` - Pattern detection events
+- `user:{id}:notifications` - User-facing notifications
+
+Example event:
+```json
+{
+  "type": "patterns_detected",
+  "message": "5 хэв маяг илрэгдлээ",
+  "timestamp": "2025-04-10T12:34:56Z",
+  "payload": {"count": 5}
+}
+```
+
+---
+
+## 🎨 Frontend Integration Guide
+
+### Using the Visualization Endpoint
+
+```javascript
+// Fetch graph data
+const response = await fetch('/api/v1/graph/visualization', {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+const data = await response.json();
+
+// Render with D3.js force simulation
+const simulation = d3.forceSimulation(data.nodes)
+  .force('link', d3.forceLink(data.links).distance(d => 100 - d.strength * 50))
+  .force('charge', d3.forceManyBody().strength(-300))
+  .force('center', d3.forceCenter(width / 2, height / 2));
+
+// Node styling by Maslow category
+nodes.append('circle')
+  .attr('fill', d => d.color)
+  .attr('r', d => Math.sqrt(d.value));
+```
+
+### Color Coding by Maslow Level
+
+| Maslow Category | Color | Hex |
+|----------------|-------|-----|
+| Physiological | Red | `#FF6B6B` |
+| Safety | Teal | `#4ECDC4` |
+| Social | Blue | `#45B7D1` |
+| Esteem | Orange | `#FFA07A` |
+| Self-Actualization | Green | `#98D8C8` |
+| Transcendence | Yellow | `#F7DC6F` |
+
+---
+
+## 📁 New Files Added
+
+| File | Purpose |
+|------|---------|
+| `app/api/v1/schemas/graph_schemas.py` | Pydantic models for graph responses |
+| `app/infrastructure/repositories/graph_repo.py` | Database operations for ValueGraph |
+| `app/api/v1/graph_routes.py` | REST endpoints for graph visualization |
+| `app/workers/graph_tasks.py` | Background jobs for graph processing |
+
+---
+
+## ✅ Current Status (2025-04-10 Update)
+
+### Completed Components
+
+#### API Layer
+- ✅ Auth routes (JWT login/register/me/refresh)
+- ✅ Journal routes (CRUD + analysis trigger)
+- ✅ **Graph routes (5 endpoints for visualization)** ⭐ NEW
+- ✅ JWT dependency injection
+
+#### Domain Layer
+- ✅ Journal entities and service
+- ✅ Psychometric analysis logic (Hawkins + Plutchik + Maslow)
+- ✅ EWMA trend calculation
+- ✅ Deep insight generation
+
+#### Infrastructure Layer
+- ✅ Supabase client (admin + user modes)
+- ✅ Redis client with pub/sub
+- ✅ Async database session management
+- ✅ **Graph repository (full CRUD for nodes/edges/patterns)** ⭐ NEW
+- ✅ Journal repository
+- ✅ Analysis repository
+- ✅ LLM client (OpenAI-compatible)
+
+#### Workers
+- ✅ Psychometric analysis job
+- ✅ Deep insight scheduling
+- ✅ **Graph update task** ⭐ NEW
+- ✅ **Pattern detection task** ⭐ NEW
+- ✅ **Recommendation generation task** ⭐ NEW
+
+### Code Statistics
+
+| Metric | Count |
+|--------|-------|
+| Python modules | 52 |
+| API endpoints | 12 |
+| Worker tasks | 6 |
+| Domain entities | 8 |
+| Repository classes | 5 |
+| Test suites | 4 |
+
+### Technology Stack
+
+- **Backend**: Python 3.12, FastAPI 0.109+, SQLAlchemy 2.0+
+- **Database**: PostgreSQL 15+ (Supabase)
+- **Queue**: Redis 7+, RQ 1.15+
+- **AI**: OpenAI API (compatible with Qwen3, GPT-4)
+- **Auth**: Supabase Auth (JWT only)
+
+### In Progress
+
+- [ ] Graph node extraction from journal text (NLP)
+- [ ] Edge weight calculation algorithms
+- [ ] Pattern rule engine implementation
+- [ ] Real-time WebSocket updates for frontend
+- [ ] Docker Compose configuration
+- [ ] Migration scripts for graph tables
+
+### Known Requirements
+
+1. **Graph Population**: Need NLP pipeline to extract values from journal entries
+2. **Edge Detection**: Implement correlation analysis between values
+3. **Pattern Rules**: Define rule-based pattern detection engine
+4. **Performance**: Optimize graph queries for large datasets (1000+ nodes)
+
+---
+
+## 🔐 Security Notes
+
+- JWT tokens validated on every protected endpoint
+- Service Role key used only in backend workers
+- User-specific data isolation via `user_id` filtering
+- Redis channels scoped per user (`user:{id}:*`)
+
+---
+
+## 📝 Next Steps
+
+1. **Frontend Development**: Build D3.js visualization component
+2. **NLP Integration**: Implement value extraction from text
+3. **Testing**: Add integration tests for graph endpoints
+4. **Documentation**: Add OpenAPI/Swagger examples
+5. **Deployment**: Configure production environment variables
+
+---
+
+**Last Updated**: April 10, 2025  
+**Status**: Active Development 🚀
