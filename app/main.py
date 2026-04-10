@@ -11,7 +11,6 @@ from app.core.settings import get_settings
 from app.core.middleware import apply_rate_limit
 from app.api.v1.journal_routes import router as journal_router
 from app.api.v1.graph_routes import router as graph_router
-from app.api.v1.auth_routes import router as auth_router
 from app.infrastructure.database import init_database, db
 from app.infrastructure.redis_client import init_redis
 from app.infrastructure.supabase_client import init_supabase
@@ -45,7 +44,6 @@ app.add_middleware(
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-app.include_router(auth_router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(journal_router, prefix="/api/v1", tags=["Journal"])
 app.include_router(graph_router, prefix="/api/v1", tags=["Graph"])
 

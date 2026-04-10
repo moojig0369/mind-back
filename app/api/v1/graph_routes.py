@@ -1,7 +1,7 @@
 """
 Graph API Routes - Controller Layer
 Provides endpoints for ValueGraph visualization and pattern analysis.
-Optimized for frontend consumption with beautiful data structures.
+Demo mode - no authentication required.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +10,7 @@ from uuid import UUID
 
 from app.infrastructure.database import get_db
 from app.infrastructure.repositories.graph_repo import GraphRepository
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_journal_service
 from app.api.v1.schemas.graph_schemas import (
     GraphSummarySchema,
     GraphVisualizationSchema,
@@ -30,7 +30,6 @@ async def get_graph_repo(db=Depends(get_db)) -> GraphRepository:
 
 @router.get("/summary", response_model=Dict[str, Any])
 async def get_graph_summary(
-    user: dict = Depends(get_current_user),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
     """
@@ -39,7 +38,8 @@ async def get_graph_summary(
     Perfect for dashboard overview.
     """
     try:
-        user_id = str(user["id"])
+        # Demo mode: use a fixed demo user ID
+        user_id = "demo-user-0000-0000-0000-000000000000"
         
         # Get statistics
         stats = await repo.get_graph_statistics(user_id)
@@ -83,7 +83,6 @@ async def get_graph_summary(
 
 @router.get("/visualization", response_model=GraphVisualizationSchema)
 async def get_graph_visualization(
-    user: dict = Depends(get_current_user),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
     """
@@ -91,7 +90,7 @@ async def get_graph_visualization(
     Returns nodes and links format ready for rendering.
     """
     try:
-        user_id = str(user["id"])
+        user_id = "demo-user-0000-0000-0000-000000000000"
         
         # Get nodes and edges
         nodes = await repo.get_value_nodes(user_id)
@@ -139,12 +138,11 @@ async def get_graph_visualization(
 
 @router.get("/patterns", response_model=Dict[str, Any])
 async def get_patterns(
-    user: dict = Depends(get_current_user),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
     """Get detected behavioral patterns for user."""
     try:
-        user_id = str(user["id"])
+        user_id = "demo-user-0000-0000-0000-000000000000"
         patterns = await repo.get_patterns(user_id)
         
         return {
@@ -159,12 +157,11 @@ async def get_patterns(
 
 @router.get("/nodes", response_model=Dict[str, Any])
 async def get_value_nodes(
-    user: dict = Depends(get_current_user),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
     """Get all ValueNodes for user with weights and metadata."""
     try:
-        user_id = str(user["id"])
+        user_id = "demo-user-0000-0000-0000-000000000000"
         nodes = await repo.get_value_nodes(user_id)
         
         return {
@@ -179,12 +176,11 @@ async def get_value_nodes(
 
 @router.post("/recalculate", response_model=Dict[str, Any])
 async def recalculate_graph(
-    user: dict = Depends(get_current_user),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
     """Trigger manual graph recalculation for user."""
     try:
-        user_id = str(user["id"])
+        user_id = "demo-user-0000-0000-0000-000000000000"
         
         # TODO: Queue recalculation job via RQ
         # For now, just ensure graph exists
