@@ -249,3 +249,71 @@ GitHub Actions automatically runs tests and linting on every push and pull reque
 ## 📄 License
 
 MIT License
+
+---
+
+## 📊 Current Status (as of April 2025)
+
+### Development Phase
+**Active Development** - Core architecture implemented, domain logic in progress
+
+### Completed Components
+✅ **Clean Architecture Foundation**
+- Full separation of API, Domain, and Infrastructure layers
+- Repository pattern with interface-based design
+- Dependency injection structure
+
+✅ **Core Domains Implemented**
+- Journal domain with entity and service layer
+- Graph domain for value relationships
+- Insight domain for AI-generated insights
+- Pattern domain for behavior analysis
+- Auth domain for authentication
+
+✅ **Infrastructure**
+- PostgreSQL database with async support
+- Redis Queue (RQ) for background jobs
+- Supabase client integration
+- LLM integration (OpenAI + Qwen3 compatible)
+
+✅ **Testing Framework**
+- Pytest configuration with async support
+- Domain logic tests (`test_journal_domain.py`)
+- Graph structure tests (`test_graph_structure.py`)
+- Repository interface tests (`test_repository_interface.py`)
+
+### Technology Stack
+| Component | Technology | Version |
+|---|---|---|
+| **Framework** | FastAPI | 0.115.0 |
+| **Validation** | Pydantic | 2.8.2 |
+| **Database** | PostgreSQL (asyncpg) | - |
+| **Queue** | Redis + RQ | 5.0.8 / 1.16.2 |
+| **LLM Client** | OpenAI SDK | 1.51.0 |
+| **External DB** | Supabase | 2.7.4 |
+| **Testing** | Pytest | - |
+
+### Code Statistics
+- **Application Files**: 44 Python modules
+- **Test Files**: 4 test suites
+- **Architecture Layers**: 3 (API, Domain, Infrastructure)
+- **Domain Modules**: 6 (auth, graph, insight, journal, pattern)
+
+### In Progress / Next Steps
+🔄 **API Endpoints** - Expanding v1 routes
+🔄 **Worker Tasks** - Background job implementation
+🔄 **Migration Scripts** - Database schema evolution (v4, v5 UML alignment)
+🔄 **Docker Configuration** - Multi-service orchestration
+
+### Known Features
+- Async worker processing for graph calculations and AI insights
+- Multi-LLM support (switch between GPT-4, Qwen3 via `.env` only)
+- Real-time notifications via WebSocket
+- Clean separation allowing easy testing and maintenance
+- CI/CD ready with GitHub Actions support
+
+### Requirements to Run
+- Python 3.9+
+- Redis 7+
+- PostgreSQL 13+ or Supabase account
+- Docker & Docker Compose (recommended)
