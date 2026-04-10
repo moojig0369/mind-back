@@ -15,10 +15,13 @@ class Settings(BaseSettings):
     app_name: str = "Journal Insights API"
     app_env: str = "development"
     app_version: str = "3.0.0"
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
     
     # Database (Supabase)
     supabase_url: str
     supabase_key: str  # Service role key for admin operations
+    supabase_service_role_key: Optional[str] = None  # Alias for supabase_key
     supabase_anon_key: str
     
     # Redis
@@ -35,6 +38,7 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
     
     # Rate Limiting
+    rate_limit_per_minute: Optional[int] = None  # Alias for rate_limit_requests
     rate_limit_requests: int = 100
     rate_limit_window: int = 60  # seconds
     
@@ -70,6 +74,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra fields from .env file
 
 
 @lru_cache()
