@@ -20,7 +20,7 @@ from app.api.v1.schemas.graph_schemas import (
     RecommendationSchema
 )
 
-router = APIRouter(prefix="/graph", tags=["ValueGraph"])
+router = APIRouter(prefix="/graph", tags=["Journal"])
 
 
 async def get_graph_repo(db=Depends(get_db)) -> GraphRepository:
