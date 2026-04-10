@@ -5,7 +5,7 @@ Handles LLM API calls with retry logic and token management.
 
 import time
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from openai import AsyncOpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app.core.settings import get_settings
@@ -116,3 +116,50 @@ class LLMClient:
         )
         
         return response.choices[0].message.content.strip()
+    
+    async def analyze_psychometrics(
+        self,
+        surface: str,
+        inner: str,
+        meaning: str,
+        ewma_previous: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Психометрик шинжилгээ хийх:
+        - Hawkins level (20-700)
+        - Plutchik emotions (primary + dyad)
+        - Maslow categories (top 3)
+        - Crisis flag
+        """
+        prompt = f"""
+Анализ хийх өгөгдөл:
+- Surface (гадаргуу бодол): {surface}
+- Inner Reaction (дотоод урвал): {inner}
+- Meaning (утга учир): {meaning}
+- Өмнөх EWMA: {ewma_previous if ewma_previous else 'байхгүй'}
+
+Дараах JSON форматтай хариул:
+{{
+  "hawkins_level": <int 20-700>,
+  "hawkins_label_en": "<string>",
+  "hawkins_label_mn": "<string>",
+  "plutchik_primary": "<emotion_key: joy, trust, fear, surprise, sadness, anger, disgust, anticipation>",
+  "plutchik_dyad": "<dyad_name эсвэл null>",
+  "maslow_categories": ["<code1>", "<code2>", "<code3>"],
+  "crisis_flag": <boolean>,
+  "confidence": <float 0-1>,
+  "reasoning": "<товч тайлбар>"
+}}
+
+Hawkins түвшин:
+- 20-175: Эго (ichih, gem, apati, uy gashuu, aidas, husel, uur, bardamnal)
+- 200-499: Ажиглагч (zorig, tenthver, huvtsel, huuleh zovshuuruh, oyuun uhaan)
+- 500-700: Гэгээрсэн (hair, bayar hohor, amar taivan, gegeerel)
+
+Хэрэв хэрэглэгч амиа хорлох, өөртөө болон бусдад хор хөнөөл учруулах тухай ярьсан бол crisis_flag = true.
+
+Maslow codes: physiological, safety, social, esteem, self_actualization
+Plutchik emotions: joy, trust, fear, surprise, sadness, anger, disgust, anticipation
+"""
+        
+        return await self.generate_json(prompt, max_tokens=500)
