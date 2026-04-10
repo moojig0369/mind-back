@@ -1,28 +1,24 @@
 ```
-# Python
+# Test and coverage reports
+.coverage
+htmlcov/
+coverage/
+.pytest_cache/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-*.so
-.coverage
-coverage/
-htmlcov/
-.pytest_cache/
-.mypy_cache/
 
-# Dependencies
-.venv/
-venv/
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Environment
 .env
 .env.local
-*.env.*
-
-# Build artifacts
-build/
-dist/
-*.egg-info/
+.env.*
 
 # Editors
 .vscode/
@@ -33,4 +29,8 @@ dist/
 
 # Logs
 *.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
