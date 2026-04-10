@@ -9,7 +9,7 @@ from typing import Optional
 from uuid import UUID
 
 from app.domains.journal.service import JournalService
-from app.domains.journal.schemas import (
+from app.api.v1.schemas import (
     JournalCreateRequest,
     JournalResponse,
     JournalListResponse,
@@ -17,6 +17,9 @@ from app.domains.journal.schemas import (
     SeedInsightResponse,
 )
 from app.api.v1.deps import get_journal_service, get_current_user
+from app.domains.journal.dto import JournalCreateDTO
+from app.infrastructure.ai.client import LLMClient
+from app.workers.tasks import run_psychometric_analysis
 
 
 router = APIRouter(prefix="/entries", tags=["Тэмдэглэл"])
@@ -70,10 +73,16 @@ async def create_entry(
     - Seed Insight: returned immediately (sync)
     - Full Analysis: queued for background processing (async)
     """
-    from app.infrastructure.ai.client import LLMClient
+    # Convert API schema to domain DTO
+    domain_data = JournalCreateDTO(
+        surface_text=data.surface_text,
+        inner_reaction_text=data.inner_reaction_text,
+        meaning_text=data.meaning_text,
+        save_text=data.save_text,
+    )
     
     # 1. Create entry
-    entry = service.create_entry(user["id"], data)
+    entry = service.create_entry(user["id"], domain_data)
     entry_id = entry["id"]
     
     # 2. Generate seed insight (sync)
@@ -127,6 +136,5 @@ async def delete_entry(
 # ── Private Helpers ───────────────────────────────────────────────────────────
 
 def _enqueue_analysis(entry_id: str, user_id: str, entry_text: dict) -> None:
-    """Enqueue psychometric analysis job to Celery worker."""
-    from app.workers.tasks import run_psychometric_analysis
+    """Enqueue psychometric analysis job to RQ worker."""
     run_psychometric_analysis.delay(entry_id=entry_id, user_id=user_id, entry_text=entry_text)

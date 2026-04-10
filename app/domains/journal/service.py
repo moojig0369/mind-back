@@ -9,30 +9,13 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from app.domains.journal.entities import JournalEntry, SeedInsight, AnalysisResult
-from app.domains.journal.schemas import JournalCreateRequest
+from app.domains.journal.dto import JournalCreateDTO
 from app.domains.journal.repository_interface import (
     JournalRepositoryInterface,
     AnalysisRepositoryInterface,
 )
 from app.infrastructure.ai.client import LLMClient
 import asyncio
-
-
-@dataclass
-class AnalysisResult:
-    """Шинжилгээний үр дүн."""
-    hawkins_level: int
-    hawkins_label_en: str
-    hawkins_label_mn: str
-    plutchik_primary: str
-    plutchik_dyad: Optional[str]
-    maslow_categories: List[str]
-    crisis_flag: bool
-    confidence: float
-    reasoning: str
-    ewma_score: float
-    trend: str
-    raw_response: Dict[str, Any]
 
 
 class JournalService:
@@ -57,7 +40,7 @@ class JournalService:
     def create_entry(
         self, 
         user_id: str, 
-        data: JournalCreateRequest
+        data: JournalCreateDTO
     ) -> Dict[str, Any]:
         """Create new journal entry."""
         index = self._repo.count_by_user(UUID(user_id)) + 1
