@@ -53,7 +53,6 @@ class PsychometricAnalysisDB(Base):
     plutchik_primary = Column(String, ForeignKey("ref_plutchik.emotion_key"))
     plutchik_dyad = Column(String)
     hawkins_level = Column(Integer, ForeignKey("ref_hawkins.level"))
-    hawkins_label = Column(String)
     hawkins_confidence = Column(Float, CheckConstraint("hawkins_confidence BETWEEN 0 AND 1"))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
@@ -110,7 +109,7 @@ class ValueNodeDB(Base):
     weight = Column(Float, default=0.0)
     avg_hawkins = Column(Float)
     mention_count = Column(Integer, default=0)
-    maslow_category = Column(String)
+    maslow_code = Column(String, ForeignKey("ref_maslow.code"))
     dominant_primary = Column(String, ForeignKey("ref_plutchik.emotion_key"))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
@@ -162,7 +161,7 @@ class ValueNodeMaslowTrackerDB(Base):
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     node_id = Column(PG_UUID(as_uuid=True), ForeignKey("value_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
     journal_id = Column(PG_UUID(as_uuid=True), ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False, index=True)
-    category = Column(String, nullable=False)
+    maslow_code = Column(String, nullable=False)
     confidence_score = Column(Float, CheckConstraint("confidence_score BETWEEN 0 AND 1"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
