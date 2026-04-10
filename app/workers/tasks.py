@@ -73,7 +73,6 @@ def run_psychometric_analysis(
         analysis.complete(
             maslow_categories=result.maslow,
             hawkins_level=result.hawkins_level,
-            hawkins_label=result.hawkins_label,
             hawkins_confidence=result.hawkins_confidence,
             plutchik_primary=result.primary_emotion,
             plutchik_dyad=result.dyad,

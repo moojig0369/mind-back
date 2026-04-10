@@ -34,7 +34,6 @@ class PsychometricAnalysisResponse(BaseModel):
     plutchik_primary: Optional[str]
     plutchik_dyad: Optional[str]
     hawkins_level: Optional[int]
-    hawkins_label: Optional[str]
     hawkins_confidence: Optional[float]
     created_at: datetime
     
