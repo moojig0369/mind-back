@@ -1,5 +1,6 @@
 """
 Rate limiting middleware.
+Demo mode - no authentication required.
 Нэг хэрэглэгч минутанд хэдэн POST хүсэлт
 илгээж болохыг Redis sliding window-р хянана.
 """
@@ -17,11 +18,8 @@ async def apply_rate_limit(request: Request, call_next):
     if _should_skip(request):
         return await call_next(request)
 
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header:
-        return await call_next(request)
-
-    key = _build_key(request.client.host, auth_header)
+    # Demo mode: use IP-based rate limiting (no auth token required)
+    key = _build_key(request.client.host)
     count = _increment_request_count(key)
 
     if count > _settings.rate_limit_per_minute:
@@ -46,9 +44,9 @@ def _should_skip(request: Request) -> bool:
     return not (is_write and is_entry)
 
 
-def _build_key(ip: str, auth: str) -> str:
-    token_hash = hash(auth) % 1_000_000
-    return f"rate:{ip}:{token_hash}"
+def _build_key(ip: str) -> str:
+    """Build rate limit key from IP address only (demo mode)."""
+    return f"rate:{ip}"
 
 
 def _increment_request_count(key: str) -> int:

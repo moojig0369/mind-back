@@ -1,6 +1,7 @@
 """
 Core exceptions for the application.
 Custom exception classes for consistent error handling.
+Demo mode - no authentication required.
 """
 
 from typing import Any, Optional
@@ -40,26 +41,6 @@ class ValidationException(AppException):
             message=message,
             status_code=422,
             detail={"field": field},
-        )
-
-
-class UnauthorizedException(AppException):
-    """Authentication required."""
-    
-    def __init__(self, message: str = "Unauthorized"):
-        super().__init__(
-            message=message,
-            status_code=401,
-        )
-
-
-class ForbiddenException(AppException):
-    """Access denied."""
-    
-    def __init__(self, message: str = "Forbidden"):
-        super().__init__(
-            message=message,
-            status_code=403,
         )
 
 
