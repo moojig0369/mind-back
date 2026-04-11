@@ -16,7 +16,7 @@ from app.api.v1.schemas import (
     JournalCreateResponse,
     SeedInsightResponse,
 )
-from app.api.v1.deps import get_journal_service, get_current_user
+from app.api.v1.deps import get_journal_service
 from app.domains.journal.dto import JournalCreateDTO
 from app.infrastructure.ai.client import LLMClient
 from app.workers.tasks import run_psychometric_analysis
@@ -35,12 +35,13 @@ async def list_entries(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
-    user: dict = Depends(get_current_user),
     service: JournalService = Depends(_get_journal_service),
 ):
     """Get paginated journal entries with optional search."""
+    # Demo mode - no auth required
+    user_id = "demo-user-id"
     result = service.get_entries(
-        user_id=user["id"],
+        user_id=user_id,
         page=page,
         page_size=page_size,
         search=search,
@@ -51,11 +52,12 @@ async def list_entries(
 @router.get("/{entry_id}", response_model=JournalResponse)
 async def get_entry(
     entry_id: str,
-    user: dict = Depends(get_current_user),
     service: JournalService = Depends(_get_journal_service),
 ):
     """Get single journal entry with related data."""
-    entry = service.get_entry(entry_id, user["id"])
+    # Demo mode - no auth required
+    user_id = "demo-user-id"
+    entry = service.get_entry(entry_id, user_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Тэмдэглэл олдсонгүй")
     return entry
@@ -65,7 +67,6 @@ async def get_entry(
 async def create_entry(
     data: JournalCreateRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user),
     service: JournalService = Depends(_get_journal_service),
 ):
     """
@@ -73,6 +74,9 @@ async def create_entry(
     - Seed Insight: returned immediately (sync)
     - Full Analysis: queued for background processing (async)
     """
+    # Demo mode - no auth required
+    user_id = "demo-user-id"
+    
     # Convert API schema to domain DTO
     domain_data = JournalCreateDTO(
         surface_text=data.surface_text,
@@ -82,7 +86,7 @@ async def create_entry(
     )
     
     # 1. Create entry
-    entry = service.create_entry(user["id"], domain_data)
+    entry = service.create_entry(user_id, domain_data)
     entry_id = entry["id"]
     
     # 2. Generate seed insight (sync)
@@ -102,7 +106,7 @@ async def create_entry(
         background_tasks.add_task(
             _enqueue_analysis,
             entry_id=entry_id,
-            user_id=user["id"],
+            user_id=user_id,
             entry_text={
                 "surface": data.surface_text,
                 "inner": data.inner_reaction_text,
@@ -125,14 +129,18 @@ async def create_entry(
 @router.post("/demo", response_model=JournalCreateResponse, status_code=201)
 async def create_demo_entry(
     background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user),
     service: JournalService = Depends(_get_journal_service),
 ):
     """
     Create demo journal entry with predefined content for testing.
     - Seed Insight: returned immediately (sync)
     - Full Analysis: queued for background processing (async)
+    
+    NOTE: This endpoint does not require authentication.
     """
+    # Demo mode - no auth required
+    user_id = "demo-user-id"
+    
     # Predefined demo content
     demo_data = JournalCreateDTO(
         surface_text="Өнөөдөр ажлын хурал дээр шинэ санаа гаргасан. Багийнхан маань сонирхолтой гэж хариулсан.",
@@ -142,7 +150,7 @@ async def create_demo_entry(
     )
     
     # 1. Create entry
-    entry = service.create_entry(user["id"], demo_data)
+    entry = service.create_entry(user_id, demo_data)
     entry_id = entry["id"]
     
     # 2. Generate seed insight (sync)
@@ -161,7 +169,7 @@ async def create_demo_entry(
     background_tasks.add_task(
         _enqueue_analysis,
         entry_id=entry_id,
-        user_id=user["id"],
+        user_id=user_id,
         entry_text={
             "surface": demo_data.surface_text,
             "inner": demo_data.inner_reaction_text,
@@ -184,11 +192,12 @@ async def create_demo_entry(
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_entry(
     entry_id: str,
-    user: dict = Depends(get_current_user),
     service: JournalService = Depends(_get_journal_service),
 ):
     """Delete journal entry (CASCADE handles related data)."""
-    if not service.delete_entry(entry_id, user["id"]):
+    # Demo mode - no auth required
+    user_id = "demo-user-id"
+    if not service.delete_entry(entry_id, user_id):
         raise HTTPException(status_code=404, detail="Тэмдэглэл олдсонгүй")
 
 

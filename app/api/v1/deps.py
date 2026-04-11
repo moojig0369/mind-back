@@ -28,10 +28,41 @@ def get_db() -> Generator[Client, None, None]:
 
 async def get_current_user(
     authorization: str = Depends(lambda: None),
+) -> Optional[dict]:
+    """
+    Get current authenticated user from Supabase Auth (optional).
+    Expects: Authorization: Bearer <jwt_token>
+    
+    Returns None if no auth header or invalid token (for public endpoints).
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    
+    token = authorization.replace("Bearer ", "")
+    
+    try:
+        supabase = get_user_client(token=token)
+        user_response = supabase.auth.get_user()
+        
+        if not user_response.user:
+            return None
+        
+        return {
+            "id": str(user_response.user.id),
+            "email": user_response.user.email,
+            "role": "user",
+        }
+    
+    except Exception:
+        return None
+
+
+async def require_auth(
+    authorization: str = Depends(lambda: None),
 ) -> dict:
     """
-    Get current authenticated user from Supabase Auth.
-    Expects: Authorization: Bearer <jwt_token>
+    Require authentication - raises 401 if not authenticated.
+    Use this dependency for protected endpoints.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -57,6 +88,8 @@ async def get_current_user(
             "role": "user",
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
