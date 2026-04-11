@@ -1,6 +1,7 @@
 """
 SQLAlchemy models for database tables.
 Matches Migration V3 schema exactly.
+Demo mode - no authentication required.
 """
 
 from datetime import datetime
@@ -24,7 +25,7 @@ class JournalEntryDB(Base):
     __tablename__ = "journal_entries"
     
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(PG_UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False, index=True)
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)  # Demo mode: no FK to auth.users
     entry_index = Column(Integer, nullable=False)
     is_text_saved = Column(Boolean, default=False)
     is_encrypted = Column(Boolean, default=False)  # Encryption flag per UML
@@ -93,7 +94,7 @@ class ValueGraphDB(Base):
     __tablename__ = "value_graphs"
     
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(PG_UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False, unique=True, index=True)  # Demo mode: no FK to auth.users
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -226,7 +227,7 @@ class RecommendationInsightDB(Base):
     __tablename__ = "recommendation_insights"
     
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(PG_UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)  # Demo mode: no FK to auth.users
     pattern_id = Column(PG_UUID(as_uuid=True), ForeignKey("patterns.id"))
     insight_text = Column(Text, nullable=False)
     recommendations = Column(String)  # JSON as string

@@ -1,10 +1,10 @@
 """
 API Dependencies - Dependency Injection Layer
 Provides shared dependencies for API routes.
+Demo mode - no authentication required.
 """
 
-from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status
+from typing import Generator
 from supabase import Client
 
 from app.infrastructure.supabase_client import get_admin_client
