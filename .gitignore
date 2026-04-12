@@ -1,1 +1,33 @@
-Nothing needs to be added to the .gitignore file based on the provided changes. The listed files (app/main.py, app/services/auth_service.py, and the deleted app/api/routes/admin.py) are all source code files that should be tracked by git. No build artifacts, dependencies, temporary files, or other items that should be ignored are present in the changes.
+# --- Google Cloud Keys (IMPORTANT) ---
+*.json
+!composer.json  # Хэрэв PHP ашигладаг бол үүнийг үлдээх
+gcp-key.json
+mind-step-key.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+build/
+dist/
+
+# --- Environment Variables ---
+.env
+.env.local
+.env.*.local
+
+# --- Docker ---
+
+
+# --- Editors & OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+arch
+archv2
