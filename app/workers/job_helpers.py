@@ -9,19 +9,11 @@ import json
 
 def run_async(coro):
     """Sync контекстод async coroutine ажиллуулна."""
+    loop = asyncio.new_event_loop()
     try:
-        # Try to get the current running loop (if we're already in async context)
-        loop = asyncio.get_running_loop()
-        # If we're in an async context, we can't use run_until_complete
-        # This should not happen in RQ workers, but handle it gracefully
-        raise RuntimeError("Cannot run async code in existing event loop")
-    except RuntimeError:
-        # No running loop exists, safe to create a new one
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def publish(
