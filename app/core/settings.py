@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     
     # Database (Supabase)
     supabase_url: str
-    supabase_key: Optional[str] = None  # Service role key for admin operations
-    supabase_service_role_key: Optional[str] = None  # Alias for supabase_key
+
+    supabase_service_role_key: str
     supabase_anon_key: str
     
     # Redis
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         """Construct async PostgreSQL URL from Supabase credentials."""
         # Use service role key if available, otherwise fallback to supabase_key
-        db_password = self.supabase_service_role_key or self.supabase_key or self.supabase_anon_key
+        db_password = self.supabase_service_role_key
         
         if "supabase.co" in self.supabase_url:
             # Extract project ID from Supabase URL

@@ -102,7 +102,7 @@ async def on_startup():
     try:
         init_supabase(
             _settings.supabase_url,
-            _settings.supabase_key,
+            _settings.supabase_service_role_key,
             _settings.supabase_anon_key
         )
         logger.info("✅ Supabase initialized")
