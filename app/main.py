@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.settings import get_settings
 from app.core.middleware import apply_rate_limit
-from app.api.routes import entries, graph, admin, websocket, demo
+from app.api.routes import entries, graph, websocket, demo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +43,6 @@ app.add_middleware(
 
 app.include_router(entries.router, prefix="/api")
 app.include_router(graph.router, prefix="/api")
-app.include_router(admin.router, prefix="/api")
 app.include_router(demo.router, prefix="/api")
 app.include_router(websocket.router)
 
