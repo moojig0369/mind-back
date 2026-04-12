@@ -7,7 +7,7 @@ import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.settings import get_settings
-from app.db.supabase import get_admin_client
+from app.db.supabase import get_anon_client
 
 _settings = get_settings()
 _bearer = HTTPBearer()
@@ -34,26 +34,6 @@ async def get_current_user(
         "email": user_data["email"],
         "role": user_data.get("role", "authenticated"),
     }
-
-
-async def get_admin_user(
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    """Admin эрх шалгана."""
-    supabase = get_admin_client()
-    result = (
-        supabase.table("users")
-        .select("id")
-        .eq("id", current_user["id"])
-        .eq("role", "admin")
-        .execute()
-    )
-    if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin эрх шаардлагатай",
-        )
-    return current_user
 
 
 async def _fetch_supabase_user(token: str) -> dict | None:
