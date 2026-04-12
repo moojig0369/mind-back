@@ -10,7 +10,7 @@ from uuid import UUID
 
 from app.infrastructure.database import get_db
 from app.infrastructure.repositories.graph_repo import GraphRepository
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import require_auth, get_current_user
 from app.api.v1.schemas.graph_schemas import (
     GraphSummarySchema,
     GraphVisualizationSchema,
@@ -30,13 +30,13 @@ async def get_graph_repo(db=Depends(get_db)) -> GraphRepository:
 
 @router.get("/summary", response_model=Dict[str, Any])
 async def get_graph_summary(
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_auth),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
     """
     Get user's complete ValueGraph summary.
     Includes nodes, edges, patterns, recommendations, and statistics.
-    Perfect for dashboard overview.
+    Perfect for dashboard overview. Requires authentication.
     """
     try:
         user_id = str(user["id"])
@@ -83,12 +83,12 @@ async def get_graph_summary(
 
 @router.get("/visualization", response_model=GraphVisualizationSchema)
 async def get_graph_visualization(
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_auth),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
     """
     Get graph data optimized for D3.js or similar visualization libraries.
-    Returns nodes and links format ready for rendering.
+    Returns nodes and links format ready for rendering. Requires authentication.
     """
     try:
         user_id = str(user["id"])
@@ -139,10 +139,10 @@ async def get_graph_visualization(
 
 @router.get("/patterns", response_model=Dict[str, Any])
 async def get_patterns(
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_auth),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
-    """Get detected behavioral patterns for user."""
+    """Get detected behavioral patterns for user. Requires authentication."""
     try:
         user_id = str(user["id"])
         patterns = await repo.get_patterns(user_id)
@@ -159,10 +159,10 @@ async def get_patterns(
 
 @router.get("/nodes", response_model=Dict[str, Any])
 async def get_value_nodes(
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_auth),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
-    """Get all ValueNodes for user with weights and metadata."""
+    """Get all ValueNodes for user with weights and metadata. Requires authentication."""
     try:
         user_id = str(user["id"])
         nodes = await repo.get_value_nodes(user_id)
@@ -179,10 +179,10 @@ async def get_value_nodes(
 
 @router.post("/recalculate", response_model=Dict[str, Any])
 async def recalculate_graph(
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_auth),
     repo: GraphRepository = Depends(get_graph_repo),
 ):
-    """Trigger manual graph recalculation for user."""
+    """Trigger manual graph recalculation for user. Requires authentication."""
     try:
         user_id = str(user["id"])
         
