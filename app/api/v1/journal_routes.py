@@ -16,7 +16,7 @@ from app.api.v1.schemas import (
     JournalCreateResponse,
     SeedInsightResponse,
 )
-from app.api.v1.deps import get_journal_service
+from app.api.v1.deps import get_journal_service, require_auth, get_current_user
 from app.domains.journal.dto import JournalCreateDTO
 from app.infrastructure.ai.client import LLMClient
 from app.workers.tasks import run_psychometric_analysis
@@ -30,16 +30,38 @@ def _get_journal_service() -> JournalService:
     return get_journal_service()
 
 
+@router.get("/demo", response_model=JournalListResponse)
+async def list_demo_entries(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    service: JournalService = Depends(_get_journal_service),
+):
+    """
+    Get paginated demo journal entries with optional search.
+    PUBLIC ENDPOINT - no authentication required.
+    Uses hardcoded demo user data.
+    """
+    user_id = "demo-user-id"
+    result = service.get_entries(
+        user_id=user_id,
+        page=page,
+        page_size=page_size,
+        search=search,
+    )
+    return result
+
+
 @router.get("/", response_model=JournalListResponse)
 async def list_entries(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
     service: JournalService = Depends(_get_journal_service),
+    current_user: dict = Depends(require_auth),
 ):
-    """Get paginated journal entries with optional search."""
-    # Demo mode - no auth required
-    user_id = "demo-user-id"
+    """Get paginated journal entries with optional search. Requires authentication."""
+    user_id = current_user["id"]
     result = service.get_entries(
         user_id=user_id,
         page=page,
@@ -53,10 +75,10 @@ async def list_entries(
 async def get_entry(
     entry_id: str,
     service: JournalService = Depends(_get_journal_service),
+    current_user: dict = Depends(require_auth),
 ):
-    """Get single journal entry with related data."""
-    # Demo mode - no auth required
-    user_id = "demo-user-id"
+    """Get single journal entry with related data. Requires authentication."""
+    user_id = current_user["id"]
     entry = service.get_entry(entry_id, user_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Тэмдэглэл олдсонгүй")
@@ -68,14 +90,14 @@ async def create_entry(
     data: JournalCreateRequest,
     background_tasks: BackgroundTasks,
     service: JournalService = Depends(_get_journal_service),
+    current_user: dict = Depends(require_auth),
 ):
     """
-    Create new journal entry.
+    Create new journal entry. Requires authentication.
     - Seed Insight: returned immediately (sync)
     - Full Analysis: queued for background processing (async)
     """
-    # Demo mode - no auth required
-    user_id = "demo-user-id"
+    user_id = current_user["id"]
     
     # Convert API schema to domain DTO
     domain_data = JournalCreateDTO(
@@ -193,10 +215,10 @@ async def create_demo_entry(
 async def delete_entry(
     entry_id: str,
     service: JournalService = Depends(_get_journal_service),
+    current_user: dict = Depends(require_auth),
 ):
-    """Delete journal entry (CASCADE handles related data)."""
-    # Demo mode - no auth required
-    user_id = "demo-user-id"
+    """Delete journal entry (CASCADE handles related data). Requires authentication."""
+    user_id = current_user["id"]
     if not service.delete_entry(entry_id, user_id):
         raise HTTPException(status_code=404, detail="Тэмдэглэл олдсонгүй")
 
