@@ -381,7 +381,7 @@ create policy "policy_psychometric_user_access" on public.psychometric_analyses
     auth.uid() IN (
       select je.user_id 
       from public.journal_entries je 
-      where je.id = psychometric_analyses.journal_id
+      where je.id = psychometric_analyses.journal_entry_id
     )
     OR 
     auth.role() = 'service_role'
