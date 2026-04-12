@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     Column, String, Text, Integer, Float, Boolean, DateTime, ForeignKey, Index,
-    CheckConstraint, UniqueConstraint
+    CheckConstraint, UniqueConstraint, JSON
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY
 from sqlalchemy.orm import relationship, declarative_base
@@ -49,7 +49,8 @@ class PsychometricAnalysisDB(Base):
     __tablename__ = "psychometric_analyses"
     
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    journal_id = Column(PG_UUID(as_uuid=True), ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=True), ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    user_id = Column(PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     maslow_categories = Column(ARRAY(String))
     emotions = Column(ARRAY(String))  # Array of emotion strings
@@ -58,14 +59,16 @@ class PsychometricAnalysisDB(Base):
     hawkins_confidence = Column(Float, CheckConstraint("hawkins_confidence BETWEEN 0 AND 1"))
     plutchik_primary = Column(String, ForeignKey("ref_plutchik.emotion_key"))
     plutchik_dyad = Column(String)
+    analysis_metadata = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     journal = relationship("JournalEntryDB", back_populates="psychometric")
     logs = relationship("AnalysisLogDB", back_populates="analysis")
     
     __table_args__ = (
-        UniqueConstraint("journal_id", name="uq_psychometric_journal"),
+        UniqueConstraint("journal_entry_id", name="uq_psychometric_journal"),
     )
 
 
