@@ -1,59 +1,49 @@
 services:
-
   # ── API ─────────────────────────────────────────────────────────────────────
   api:
     build:
       context: .
-      target: dev          # production бол → target: prod
+      target: dev
     ports:
       - "8000:8000"
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
+      # Контейнер доторх зам нь /app/ хавтас дотор байхаар заав
       GOOGLE_APPLICATION_CREDENTIALS: /app/mind-step-key.json
     depends_on:
       redis:
         condition: service_healthy
     volumes:
-      - .:/app
-      # Vertex AI ашиглах үед л:
-      - ./mind-step-key.json:/app/gcp-key.json:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    restart: unless-stopped
+      - .:/app  # Энэ мөр таны бүх файлыг (json-г оролцуулаад) контейнер руу хуулна
 
   # ── Worker ──────────────────────────────────────────────────────────────────
-  # seed / analysis / human_insight / deep_insight — 4 queue бүгдийг сонсно
   worker:
-      build:
-        context: .
-        target: dev
-      env_file: .env
-      environment:
-        - REDIS_URL=redis://redis:6379/0
-        - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
-        - PYTHONPATH=/app  # <--- ЭНЭ МӨРИЙГ ЗААВАЛ НЭМ!
-      depends_on:
-        redis:
-          condition: service_healthy
-        api:
-          condition: service_healthy
-      volumes:
-        - .:/app
-        - ./gcp-key.json:/app/gcp-key.json:ro # Файлын нэрээ ls-ээр харсан нэрээрээ тааруулав
-      command: python worker.py
-      restart: unless-stopped
+    build:
+      context: .
+      target: dev
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/mind-step-key.json # API-тай ижил болгов
+      - PYTHONPATH=/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    volumes:
+      - .:/app # Энд ч бас бүх файлыг холбож байна
+    command: python worker.py
+    restart: unless-stopped
+
   # ── Redis ───────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data             # өгөгдөл хадгалагдана (restart-д хамгаалагдана)
+      - redis_data:/data
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -62,7 +52,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── RQ Dashboard (dev профайл) ───────────────────────────────────────────────
+  # ── RQ Dashboard ────────────────────────────────────────────────────────────
   rq-dashboard:
     image: eoranged/rq-dashboard
     ports:

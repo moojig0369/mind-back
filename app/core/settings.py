@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 3
 
     # Demo endpoint — өдөрт IP-р хэдэн удаа
-    demo_daily_limit: int = 5
+    demo_daily_limit: int = 10
 
     @property
     def cors_origins_list(self) -> list[str]:
