@@ -12,10 +12,7 @@ _log = logging.getLogger(__name__)
 _settings = get_settings()
 
 # Vertex AI OpenAI-compatible endpoint format
-_VERTEX_BASE = (
-    "https://{region}-aiplatform.googleapis.com/v1beta1/projects/"
-    "{project}/locations/{region}/endpoints/openapi"
-)
+_VERTEX_BASE = _settings.llm_base_url
 
 
 def _is_vertex(base_url: str) -> bool:

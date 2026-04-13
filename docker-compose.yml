@@ -10,15 +10,14 @@ services:
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
-      # Vertex AI ашиглах үед л доорх хоёр мөрийг идэвхжүүл:
-      # GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-key.json
     depends_on:
       redis:
         condition: service_healthy
     volumes:
       - .:/app
       # Vertex AI ашиглах үед л:
-      # - ./mind-step-key.json:/app/gcp-key.json:ro
+      - ./mind-step-key.json:/app/gcp-key.json:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -30,24 +29,24 @@ services:
   # ── Worker ──────────────────────────────────────────────────────────────────
   # seed / analysis / human_insight / deep_insight — 4 queue бүгдийг сонсно
   worker:
-    build:
-      context: .
-      target: dev
-    env_file: .env
-    environment:
-      REDIS_URL: redis://redis:6379/0
-      # GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-key.json
-    depends_on:
-      redis:
-        condition: service_healthy
-      api:                          # API эхэлсний дараа worker ажиллана
-        condition: service_healthy
-    volumes:
-      - .:/app
-      # - ./mind-step-key.json:/app/gcp-key.json:ro
-    command: python worker.py
-    restart: unless-stopped
-
+      build:
+        context: .
+        target: dev
+      env_file: .env
+      environment:
+        - REDIS_URL=redis://redis:6379/0
+        - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+        - PYTHONPATH=/app  # <--- ЭНЭ МӨРИЙГ ЗААВАЛ НЭМ!
+      depends_on:
+        redis:
+          condition: service_healthy
+        api:
+          condition: service_healthy
+      volumes:
+        - .:/app
+        - ./gcp-key.json:/app/gcp-key.json:ro # Файлын нэрээ ls-ээр харсан нэрээрээ тааруулав
+      command: python worker.py
+      restart: unless-stopped
   # ── Redis ───────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
