@@ -1,4 +1,5 @@
 services:
+
   # ── API ─────────────────────────────────────────────────────────────────────
   api:
     build:
@@ -9,13 +10,20 @@ services:
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
-      # Контейнер доторх зам нь /app/ хавтас дотор байхаар заав
+      # Контейнер доторх файлын зам
       GOOGLE_APPLICATION_CREDENTIALS: /app/mind-step-key.json
     depends_on:
       redis:
         condition: service_healthy
     volumes:
-      - .:/app  # Энэ мөр таны бүх файлыг (json-г оролцуулаад) контейнер руу хуулна
+      - .:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
 
   # ── Worker ──────────────────────────────────────────────────────────────────
   worker:
@@ -25,7 +33,7 @@ services:
     env_file: .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/mind-step-key.json # API-тай ижил болгов
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/mind-step-key.json
       - PYTHONPATH=/app
     depends_on:
       redis:
@@ -33,7 +41,7 @@ services:
       api:
         condition: service_healthy
     volumes:
-      - .:/app # Энд ч бас бүх файлыг холбож байна
+      - .:/app
     command: python worker.py
     restart: unless-stopped
 
