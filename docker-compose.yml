@@ -10,7 +10,7 @@ services:
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
-      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /app/mind-step-key.json
     depends_on:
       redis:
         condition: service_healthy
