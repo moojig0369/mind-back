@@ -13,8 +13,8 @@ class ValueNodeResponse(BaseModel):
 
 class ValueEdgeResponse(BaseModel):
     id: UUID
-    from_node_id: UUID
-    to_node_id: UUID
+    node_a_id: UUID
+    node_b_id: UUID
     hawkins_level_avg: float
     hawkins_score_avg: float
     interaction_count: int

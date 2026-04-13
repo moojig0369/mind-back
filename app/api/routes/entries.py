@@ -91,6 +91,15 @@ async def create_entry(
             # 3. Analysis — queue
         _enqueue_analysis(entry_id, user_id, data)
 
+    # 4. Deep Insight — 10+ тэмдэглэлийн дараа trigger
+    count = journal.count_user_entries(user_id)
+    if journal.should_trigger_deep_insight(count):
+        get_deep_insight_queue().enqueue(
+            "app.workers.jobs.process_deep_insight",
+            user_id=user_id,
+            job_timeout=180,
+        )
+
     return EntryCreateResponse(
         entry_id=entry_id,
         seed_insight=seed,

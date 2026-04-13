@@ -310,9 +310,18 @@ class GraphBuilder:
             }).execute()
 
             if is_conflict:
-                self._db.rpc("increment_conflict_count", {
-                    "p_node_id": node_id,
-                }).execute()
+                # SQL RPC байхгүй тул Python-д шууд update хийнэ
+                node_row = (
+                    self._db.table("value_nodes")
+                    .select("mention_count")
+                    .eq("id", node_id)
+                    .single()
+                    .execute()
+                ).data
+                if node_row:
+                    self._db.table("value_nodes").update({
+                        "mention_count": node_row["mention_count"] + 1,
+                    }).eq("id", node_id).execute()
 
             self._update_dominant_emotion(emotion_id)
 

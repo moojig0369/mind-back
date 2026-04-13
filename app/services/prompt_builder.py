@@ -468,6 +468,43 @@ def apply_ewma(data: dict, previous: float | None) -> None:
     data["hawkins"]["ewma_updated"] = updated
 
 
+_HUMAN_INSIGHT_SYSTEM = """\
+Та сэтгэл зүйн ухаалаг зөвлөх. Хэрэглэгчийн бичсэн тэмдэглэлээс автоматаар илрүүлсэн \
+сэтгэл хөдлөл, хэрэгцээний хэв маягийг монгол хэлээр энгийн, дулаан өнгөөр тайлбарлана.
+
+Дүрмүүд:
+- 2–3 өгүүлбэр, хэт урт биш
+- "Таны" гэж хандана, мэргэжлийн нэр томьёо хэрэглэхгүй
+- Шүүмжлэхгүй, дэмжлэг үзүүлэх
+- JSON форматаар буцаана:
+  {"insight_text": "...", "highlight_type": "dominant_need|low_state|emotion_trend|...", "strength_score": 0.0–1.0}
+"""
+
+
+def build_human_insight_messages(patterns: list[dict]) -> list[dict]:
+    """
+    detected_patterns жагсаалтаас хэрэглэгчид ойлгомжтой монгол
+    текст үүсгэх LLM prompt.
+    """
+    import json as _json
+    summary = _json.dumps(
+        [
+            {
+                "type":     p.get("pattern_type"),
+                "data":     p.get("pattern_data"),
+                "strength": p.get("strength_score"),
+            }
+            for p in patterns
+        ],
+        ensure_ascii=False,
+    )
+    user_msg = f"Дараах хэв маягуудыг хэрэглэгчид тайлбарла:\n{summary}"
+    return [
+        {"role": "system", "content": _HUMAN_INSIGHT_SYSTEM},
+        {"role": "user",   "content": user_msg},
+    ]
+
+
 def _entry_text(surface: str, inner: str, meaning: str) -> str:
     return (
         f"Surface: {surface}\n"

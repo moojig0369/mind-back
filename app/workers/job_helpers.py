@@ -1,55 +1,44 @@
 """
-Worker helper функцүүд.
-jobs.py-с тусгаарласан (SRP + мөрийн хязгаар).
+Redis холболт болон Queue factory.
+
+Queue-ууд:
+  seed_queue        — Seed Insight (HIGH priority, хурдан)
+  analysis_queue    — Full analysis (normal priority)
+  deep_insight_queue— Deep Insight (low priority)
 """
 
-import asyncio
-import json
+from functools import lru_cache
+import redis
+from rq import Queue
+from app.core.settings import get_settings
+
+_settings = get_settings()
 
 
-def run_async(coro):
-    """Sync контекстод async coroutine ажиллуулна."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+@lru_cache()
+def get_redis_connection() -> redis.Redis:
+    return redis.from_url(_settings.redis_url)
 
 
-def publish(
-    redis,
-    channel: str,
-    msg_type: str,
-    message: str | None = None,
-    payload: dict | None = None,
-) -> None:
-    """Redis Pub/Sub-аар WS мэдэгдэл илгээнэ."""
-    data: dict = {"type": msg_type}
-    if message:
-        data["message"] = message
-    if payload:
-        data["data"] = payload
-    redis.publish(channel, json.dumps(data, ensure_ascii=False))
-
-def _to_float(v) -> float:
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return 0.0
+@lru_cache()
+def get_seed_queue() -> Queue:
+    """HIGH priority — Seed Insight хурдан дуусах ёстой."""
+    return Queue("seed", connection=get_redis_connection())
 
 
-def top_maslow_categories(maslow: list, limit: int = 2) -> list[str]:
-    """Хамгийн өндөр confidence-тай N Maslow category буцаана."""
-    scored = [
-        (
-            item.get("category", ""),
-            sum(
-                _to_float(v)
-                for d in item.get("values", [])
-                for v in d.values()
-            ),
-        )
-        for item in maslow
-    ]
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return [c for c, _ in scored[:limit]]
+@lru_cache()
+def get_analysis_queue() -> Queue:
+    """Normal priority — Maslow/Plutchik/Hawkins бүрэн шинжилгээ."""
+    return Queue("analysis", connection=get_redis_connection())
+
+
+@lru_cache()
+def get_deep_insight_queue() -> Queue:
+    """Low priority — 10+ тэмдэглэлийн дараа."""
+    return Queue("deep_insight", connection=get_redis_connection())
+
+
+@lru_cache()
+def get_human_insight_queue() -> Queue:
+    """Low priority — Pattern Engine дуусмагц human insight үүсгэнэ."""
+    return Queue("human_insight", connection=get_redis_connection())

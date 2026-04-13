@@ -138,6 +138,21 @@ class LlmService:
         raw = await self._complete(messages, caller="deep_insight")
         return _parse_json(raw)
 
+    @retry(stop=stop_after_attempt(1), wait=wait_exponential(min=2, max=8))
+    async def generate_human_insight(self, patterns: list[dict]) -> dict:
+        """
+        Pattern жагсаалтаас монгол хэлний human insight үүсгэнэ.
+        {"insight_text": str, "highlight_type": str, "strength_score": float}
+        """
+        messages = prompt_builder.build_human_insight_messages(patterns)
+        raw = await self._complete(messages, caller="human_insight")
+        parsed = _parse_json(raw)
+        return {
+            "insight_text":   parsed.get("insight_text", ""),
+            "highlight_type": parsed.get("highlight_type", ""),
+            "strength_score": float(parsed.get("strength_score", 0.0)),
+        }
+
     # ── Private ───────────────────────────────────────────────────────────────
 
     async def _complete(self, messages: list[dict], caller: str = "llm") -> str:
