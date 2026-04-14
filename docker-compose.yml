@@ -19,10 +19,10 @@ services:
       - .:/app
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
+      interval: 60s
+      timeout: 10s
       retries: 5
-      start_period: 10s
+      start_period: 60s
     restart: unless-stopped
 
   # ── Worker ──────────────────────────────────────────────────────────────────
@@ -34,7 +34,6 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - GOOGLE_APPLICATION_CREDENTIALS=/app/mind-step-key.json
-      - PYTHONPATH=/app
     depends_on:
       redis:
         condition: service_healthy

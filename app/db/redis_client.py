@@ -1,10 +1,11 @@
 """
 Redis холболт болон Queue factory.
 
-Queue-ууд:
-  seed_queue        — Seed Insight (HIGH priority, хурдан)
-  analysis_queue    — Full analysis (normal priority)
-  deep_insight_queue— Deep Insight (low priority)
+Queue-ууд (priority дарааллаар):
+  seed          — Seed Insight (хамгийн өндөр)
+  analysis      — Full analysis (Maslow/Plutchik/Hawkins)
+  human_insight — Pattern-с монгол insight үүсгэх
+  deep_insight  — 10+ тэмдэглэлийн дараах гүн шинжилгээ
 """
 
 from functools import lru_cache
@@ -30,6 +31,12 @@ def get_seed_queue() -> Queue:
 def get_analysis_queue() -> Queue:
     """Normal priority — Maslow/Plutchik/Hawkins бүрэн шинжилгээ."""
     return Queue("analysis", connection=get_redis_connection())
+
+
+@lru_cache()
+def get_human_insight_queue() -> Queue:
+    """Low priority — Pattern Engine дуусмагц human insight үүсгэнэ."""
+    return Queue("human_insight", connection=get_redis_connection())
 
 
 @lru_cache()

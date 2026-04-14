@@ -5,6 +5,10 @@
   1. Тэмдэглэл DB-д хадгална
   2. Seed Insight → шууд LLM дуудаж хариу буцаана  (sync)
   3. Analysis     → Redis Queue-д илгээнэ           (async)
+
+АНХААРУУЛГА:
+  enqueue() дотор функцийг string-ээр биш, шууд reference-ээр дамжуулна.
+  RQ 1.16-д dotted string import механизм bug байдаг.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -19,6 +23,7 @@ from app.services.journal_service import JournalService
 from app.services.llm_service import get_llm_service
 from app.db.supabase import get_admin_client
 from app.db.redis_client import get_analysis_queue, get_deep_insight_queue
+from app.workers.jobs import run_analysis_job, process_deep_insight
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/entries", tags=["Тэмдэглэл"])
@@ -88,14 +93,15 @@ async def create_entry(
 
     if seed.mirror != '':
         journal.save_seed_insight(entry_id, seed.model_dump())
-            # 3. Analysis — queue
+        # 3. Analysis — queue
         _enqueue_analysis(entry_id, user_id, data)
 
     # 4. Deep Insight — 10+ тэмдэглэлийн дараа trigger
     count = journal.count_user_entries(user_id)
     if journal.should_trigger_deep_insight(count):
+        # Function reference ашиглана — string биш (RQ 1.16 bug)
         get_deep_insight_queue().enqueue(
-            "app.workers.jobs.process_deep_insight",
+            process_deep_insight,
             user_id=user_id,
             job_timeout=180,
         )
@@ -123,8 +129,9 @@ async def delete_entry(
 def _enqueue_analysis(
     entry_id: str, user_id: str, data: EntryCreateRequest
 ) -> None:
+    # Function reference ашиглана — string биш (RQ 1.16 bug)
     get_analysis_queue().enqueue(
-        "app.workers.jobs.run_analysis_job",
+        run_analysis_job,
         entry_id=entry_id,
         user_id=user_id,
         entry_text={

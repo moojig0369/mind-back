@@ -14,7 +14,7 @@ ENV/
 env/
 build/
 dist/
-
+mind-step-key.json
 # --- Environment Variables ---
 .env
 .env.local

@@ -13,6 +13,11 @@ RQ Worker Jobs.
                         └─ WS: human_insight_ready
 
   10+ entries → process_deep_insight (deep_insight queue)
+
+АНХААРУУЛГА:
+  enqueue() дотор функцийг string-ээр биш, шууд reference-ээр дамжуулна.
+  RQ 1.16-д "app.workers.jobs.func" гэсэн string import механизм
+  app.workers → .jobs гэж буруу задлах bug байдаг.
 """
 
 import logging
@@ -49,8 +54,9 @@ def generate_seed_job(
         publish(redis, entry_id, "seed_done", payload=seed.model_dump())
         _log.info(f"Seed done: entry={entry_id}")
 
+        # Function reference ашиглана — string биш (RQ 1.16 bug тойрч гарна)
         get_analysis_queue().enqueue(
-            "app.workers.jobs.run_analysis_job",
+            run_analysis_job,
             entry_id=entry_id,
             user_id=user_id,
             entry_text=entry_text,
@@ -72,16 +78,18 @@ def run_analysis_job(
     Seed Insight дуусмагц ажиллана.
 
     Дараалал:
-      1–4. Analysis + graph шинэчлэлт  (байсан)
-      5.   RUN Pattern Engine           ← 🔥 ШИНЭ
-      6.   Store detected_patterns      ← 🔥 ШИНЭ
+      1–3. LLM шинжилгээ
+      4.   Graph шинэчлэлт
+      5.   PatternEngine.run()
+      6.   detected_patterns хадгалагдана (engine дотор)
+      7.   generate_human_insight_job queue-д нэмнэ
     """
     from app.services.llm_service import get_llm_service
     from app.services.journal_service import JournalService
-    from app.services.pattern_engine import PatternEngine
+    # app/workers/pattern.py дотор PatternEngine байна (app/services/patttern_engine.py биш)
+    from app.workers.pattern import PatternEngine
     from app.db.supabase import get_admin_client
     from app.db.redis_client import get_redis_connection
-    from datetime import datetime, timezone
 
     db = get_admin_client()
     journal = JournalService(db)
@@ -109,26 +117,23 @@ def run_analysis_job(
         journal.save_analysis(entry_id, result)
         journal.update_value_nodes(user_id, result, entry_id)
         journal.mark_analysis_processed(entry_id)
-
         _log.info(f"Analysis + graph done: entry={entry_id}")
 
-        # ── 5. RUN Pattern Engine 🔥 ─────────────────────────────────────────
+        # ── 5–6. Pattern Engine ───────────────────────────────────────────────
         run_id = _start_pattern_run(db, user_id)
-
         engine = PatternEngine(db)
         detected = engine.run(user_id=user_id, run_id=run_id)
-
-        # ── 6. Store detected_patterns (engine.run дотор хийгдсэн) ───────────
         _log.info(
             f"Pattern Engine done: user={user_id}, "
             f"detected={len(detected)}, run_id={run_id}"
         )
 
-        # ── 7. Human Insight автоматаар queue-д нэмнэ 🔥 ────────────────────
+        # ── 7. Human Insight queue-д нэмнэ ───────────────────────────────────
         if detected:
             from app.db.redis_client import get_human_insight_queue
+            # Function reference ашиглана — string биш
             get_human_insight_queue().enqueue(
-                "app.workers.jobs.generate_human_insight_job",
+                generate_human_insight_job,
                 user_id=user_id,
                 run_id=run_id,
                 entry_id=entry_id,
@@ -160,6 +165,7 @@ def process_deep_insight(user_id: str) -> None:
     """
     ValueGraph-д тулгуурлан Deep Insight үүсгэж
     хэрэглэгчид push notification илгээнэ.
+    10+ тэмдэглэлийн дараа автоматаар дуудагдана.
     """
     from app.services.llm_service import get_llm_service
     from app.services.journal_service import JournalService
@@ -198,9 +204,8 @@ def generate_human_insight_job(
 ) -> None:
     """
     Pattern Engine дуусмагц автоматаар дуудагдана.
-
     detected_patterns → LLM → human_insights хадгална → WS мэдэгдэл.
-    Нэг run-д хоёр дахь удаа дуудагдвал ON CONFLICT-оор алгасна.
+    Нэг run-д хоёр дахь удаа дуудагдвал кэш шалгаж алгасна.
     """
     from app.services.llm_service import get_llm_service
     from app.db.supabase import get_admin_client
@@ -209,7 +214,7 @@ def generate_human_insight_job(
     db    = get_admin_client()
     redis = get_redis_connection()
 
-    # Кэш шалгана — нэг run-д нэг л insight
+    # Нэг run-д нэг л insight үүсгэнэ
     existing = (
         db.table("human_insights")
         .select("id")
@@ -263,8 +268,8 @@ def generate_human_insight_job(
     publish(
         redis, entry_id, "human_insight_ready",
         payload={
-            "insight_id":   row["id"],
-            "insight_text": result["insight_text"],
+            "insight_id":     row["id"],
+            "insight_text":   result["insight_text"],
             "highlight_type": result.get("highlight_type", ""),
         },
     )
@@ -274,10 +279,7 @@ def generate_human_insight_job(
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 def _start_pattern_run(db, user_id: str) -> str:
-    """
-    pattern_runs-д шинэ мөр нэмж run_id буцаана.
-    PatternEngine дуусахад finish_run() дуудагдана.
-    """
+    """pattern_runs-д шинэ мөр нэмж run_id буцаана."""
     row = (
         db.table("pattern_runs")
         .insert({"user_id": user_id, "status": "running"})
