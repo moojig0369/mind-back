@@ -86,8 +86,7 @@ def run_analysis_job(
     """
     from app.services.llm_service import get_llm_service
     from app.services.journal_service import JournalService
-    # app/workers/pattern.py дотор PatternEngine байна (app/services/patttern_engine.py биш)
-    from app.workers.pattern import PatternEngine
+    from app.services.patttern_engine import PatternEngine
     from app.db.supabase import get_admin_client
     from app.db.redis_client import get_redis_connection
 
