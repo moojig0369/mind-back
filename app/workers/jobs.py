@@ -195,40 +195,89 @@ def process_deep_insight(user_id: str) -> None:
     )
     _log.info(f"Deep Insight done: user={user_id}")
 
-def generate_human_insight_job(user_id: str, run_id: str, entry_id: str):
-    """
-    Pattern Engine дуусмагц автоматаар дуудагдана.
-    detected_patterns → LLM → human_insights хадгална → WS мэдэгдэл.
-    Нэг run-д хоёр дахь удаа дуудагдвал кэш шалгаж алгасна.
-    """
-    from app.db.supabase import get_supabase
-    from app.services.patttern_engine import PatternEngine
-    from app.services.llm_service import LLMService
-
-
-    supabase = get_supabase()
-    llm = LLMService()
-
-    # Patterns-ийг татна
-    patterns = PatternEngine().get_patterns_for_run(run_id)
-
-    # Top 5 хүртэл, strength_score-оор эрэмбэлнэ
-    top_patterns = sorted(patterns, key=lambda p: p["strength_score"], reverse=True)[:5]
-
-    for p in top_patterns:
-        result = llm.generate_pattern_insight(p)
-
-        supabase.table("human_insights").insert({
-            "user_id": user_id,
-            "pattern_run_id": run_id,
-            "pattern_type": p["pattern_type"],   # 🔥 шинэ
-            "insight_text": result["insight_text"],
-            "highlight_type": result.get("highlight_type", ""),
-            "strength_score": p["strength_score"],
-        }).execute()
-
 # ── Job 4: Human Insight (автомат) ───────────────────────────────────────────
 
+def generate_human_insight_job(
+    user_id: str, run_id: str, entry_id: str
+) -> None:
+
+    from app.services.llm_service import get_llm_service
+    from app.db.supabase import get_admin_client
+    from app.db.redis_client import get_redis_connection
+
+    db    = get_admin_client()
+    redis = get_redis_connection()
+
+    # Тухайн run-н хамгийн хүчтэй 5 pattern
+    patterns = (
+        db.table("detected_patterns")
+        .select("pattern_type, pattern_data, strength_score")
+        .eq("user_id", user_id)
+        .eq("run_id", run_id)
+        .order("strength_score", desc=True)
+        .limit(5)
+        .execute()
+    ).data or []
+
+    if not patterns:
+        _log.warning(f"Human insight: pattern олдсонгүй run_id={run_id}")
+        return
+
+    # Pattern тус бүрт — type-аар давхардал шалгаж insight үүсгэнэ
+    for p in patterns:
+        existing = (
+            db.table("human_insights")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("pattern_type", p["pattern_type"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        ).data or []
+
+        if existing:
+            _log.info(
+                f"Human insight кэшлэгдсэн — алгасна: "
+                f"pattern_type={p['pattern_type']}"
+            )
+            continue
+
+        try:
+            result = run_async(
+                get_llm_service().generate_human_insight([p])
+            )
+        except Exception as exc:
+            _log.error(f"Human insight LLM алдаа: {exc}", exc_info=True)
+            continue
+
+        row = (
+            db.table("human_insights")
+            .insert(
+                {
+                    "user_id":        user_id,
+                    "pattern_run_id": run_id,
+                    "pattern_type":   p["pattern_type"],   # 🔥 шинэ
+                    "insight_text":   result["insight_text"],
+                    "highlight_type": result.get("highlight_type", ""),
+                    "strength_score": p["strength_score"],
+                }
+            )
+            .execute()
+        ).data[0]
+
+        publish(
+            redis, entry_id, "human_insight_ready",
+            payload={
+                "insight_id":     row["id"],
+                "insight_text":   result["insight_text"],
+                "highlight_type": result.get("highlight_type", ""),
+                "pattern_type":   p["pattern_type"],
+            },
+        )
+        _log.info(
+            f"Human Insight done: user={user_id}, "
+            f"run={run_id}, pattern_type={p['pattern_type']}"
+        )
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
