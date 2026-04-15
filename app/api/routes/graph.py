@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["Граф ба Insight"])
 
-# ── Response schema нэмэлт ────────────────────────────────────────────────────
+# ── Response schema ────────────────────────────────────────────────────────────
 
 class EmotionStatRow(BaseModel):
     emotion:    str
@@ -28,6 +28,112 @@ def _get_journal_service() -> JournalService:
     return JournalService(get_admin_client())
 
 
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _resolve_hawkins_band(db: Client, score: float | None) -> dict | None:
+    """EWMA score-оос Hawkins label + band мэдээлэл авна."""
+    if score is None:
+        return None
+
+    level = round(score * 1000)  # 0–1 → 0–1000
+
+    row = (
+        db.table("ref_hawkins")
+        .select("level,view_of_life,transcend_key,what_we_experience,state_of_consciousness, label_en, label_mn, band_code, ref_hawkins_bands(label_mn, color_hex, level_min, level_max)")
+        .lte("level", level)
+        .order("level", desc=True)
+        .limit(1)
+        .execute()
+    ).data
+
+    if not row:
+        return None
+
+    r = row[0]
+    band = r.get("ref_hawkins_bands") or {}
+    return {
+        "level":      r["level"],
+        "label_en":   r["label_en"],
+        "label_mn":   r["label_mn"],
+        "band_code":  r["band_code"],
+        "band_label": band.get("label_mn"),
+        "color_hex":  band.get("color_hex"),
+        "band_min":   band.get("level_min"),
+        "band_max":   band.get("level_max"),
+    }
+
+
+def _next_hawkins_target(db: Client, current_level: int) -> dict | None:
+    """Дараагийн band-н хамгийн доод level-г зорилт болгоно."""
+    if current_level is None:
+        return None
+
+    # Одоогийн band авна
+    current_band_row = (
+        db.table("ref_hawkins")
+        .select("band_code, ref_hawkins_bands(level_max)")
+        .lte("level", current_level)
+        .order("level", desc=True)
+        .limit(1)
+        .execute()
+    ).data
+
+    if not current_band_row:
+        return None
+
+    current_band_max = (current_band_row[0].get("ref_hawkins_bands") or {}).get("level_max")
+    if current_band_max is None:
+        return None
+
+    # Дараагийн band-н хамгийн доод level
+    next_row = (
+        db.table("ref_hawkins")
+        .select("level, label_en, label_mn, band_code, ref_hawkins_bands(label_mn, color_hex)")
+        .gt("level", current_band_max)
+        .order("level", asc=True)
+        .limit(1)
+        .execute()
+    ).data
+
+    if not next_row:
+        return None
+
+    r = next_row[0]
+    band = r.get("ref_hawkins_bands") or {}
+    return {
+        "level":      r["level"],
+        "label_en":   r["label_en"],
+        "label_mn":   r["label_mn"],
+        "band_label": band.get("label_mn"),
+        "color_hex":  band.get("color_hex"),
+        "gap":        r["level"] - current_level,
+    }
+
+
+def _get_dyad(db: Client, emotion_a: str, emotion_b: str) -> dict | None:
+    """Хоёр primary emotion-н dyad нэр авна."""
+    rows = (
+        db.table("ref_plutchik_dyads")
+        .select("dyad_name_en, dyad_name_mn")
+        .or_(
+            f"and(emotion_a.eq.{emotion_a},emotion_b.eq.{emotion_b}),"
+            f"and(emotion_a.eq.{emotion_b},emotion_b.eq.{emotion_a})"
+        )
+        .limit(1)
+        .execute()
+    ).data
+
+    if not rows:
+        return None
+
+    return {
+        "name_en": rows[0]["dyad_name_en"],
+        "name_mn": rows[0]["dyad_name_mn"],
+    }
+
+
+# ── Endpoints ──────────────────────────────────────────────────────────────────
+
 @router.get("/graph")
 async def get_value_graph(
     user: dict = Depends(get_current_user),
@@ -43,6 +149,7 @@ async def get_value_graph(
         }
     return graph
 
+
 @router.get("/stats/emotions", response_model=list[EmotionStatRow])
 async def get_emotion_stats(
     entries: int = Query(10, ge=1, le=50, description="Сүүлийн хэдэн тэмдэглэл"),
@@ -51,18 +158,7 @@ async def get_emotion_stats(
 ):
     """
     Плутчикийн сэтгэл хөдлөлийн хэв маяг — сүүлийн N тэмдэглэл.
-
-    Хоногоор бус тэмдэглэлийн тоогоор хайрлана.
-    Утга нь зүгээр count биш — primary_score-ийн нийлбэр
-    (confidence-weighted) тул бага ч гэсэн хүчтэй emotion дийлнэ.
-
-    Response:
-        emotion      — Plutchik primary нэр
-        score_sum    — weighted score нийлбэр
-        count        — тохиолдсон тоо
-        percentage   — нийт score-н эзлэх хувь (0–100)
     """
-    # 1. Хэрэглэгчийн сүүлийн N entry_id авна
     entry_rows = (
         db.table("journal_entries")
         .select("id")
@@ -77,7 +173,6 @@ async def get_emotion_stats(
 
     entry_ids = [r["id"] for r in entry_rows]
 
-    # 2. Тэдгээр entry-н analysis авна
     rows = (
         db.table("journal_analyses")
         .select("plutchik_primary, plutchik_intensity")
@@ -89,7 +184,6 @@ async def get_emotion_stats(
     if not rows:
         return []
 
-    # 3. Emotion-ээр нэгтгэнэ — score нийлбэр + count
     totals: dict[str, dict] = {}
     for r in rows:
         key = r["plutchik_primary"]
@@ -101,7 +195,6 @@ async def get_emotion_stats(
 
     total_score = sum(v["score_sum"] for v in totals.values()) or 1.0
 
-    # 4. Бүх 8 Plutchik emotion-г оруулна (0 утгатай байсан ч)
     ALL_EMOTIONS = [
         "joy", "trust", "fear", "surprise",
         "sadness", "disgust", "anger", "anticipation",
@@ -117,8 +210,8 @@ async def get_emotion_stats(
             "percentage": round(data["score_sum"] / total_score * 100, 1),
         })
 
-    # Score-оор буурах дарааллаар
     return sorted(result, key=lambda x: x["score_sum"], reverse=True)
+
 
 @router.get("/insights/deep")
 async def list_deep_insights(
@@ -178,51 +271,45 @@ async def get_today_snapshot(
     Dashboard-н нэгдсэн snapshot — нэг л API хүсэлтэд бүх мэдээлэл.
 
     Агуулга:
-      ewma          — сүүлийн Хокинсын EWMA дундаж
-      entry_count   — нийт тэмдэглэлийн тоо
-      top_patterns  — сүүлийн run-н хамгийн хүчтэй 3 pattern
-      last_seed     — хамгийн сүүлийн seed insight
-      last_human_insight — хамгийн сүүлийн human insight (байгаа бол)
-      dominant_emotion   — хамгийн давамгай emotion (сүүлийн 10 entry)
+      hawkins_current    — EWMA-с тооцсон одоогийн Hawkins төлөв (label, band, color)
+      hawkins_target     — дараагийн band-н хамгийн доод level (зорилт + gap)
+      entry_count        — нийт тэмдэглэлийн тоо
+      unread_patterns    — acknowledged=false байгаа patterns (strength-оор эрэмбэлсэн)
+      last_human_insight — хамгийн сүүлийн human insight (pattern-г үгээр тайлбарласан)
+      dominant_emotions  — хамгийн хүчтэй 2 сэтгэл хөдлөл + тэдгээрийн dyad
     """
     user_id = user["id"]
 
-    # 1. EWMA + entry count
+    # 1. EWMA + Hawkins одоогийн болон зорилтот төлөв
     ewma = journal.get_user_ewma(user_id)
     count = journal.count_user_entries(user_id)
 
-    # 2. Сүүлийн run-н top patterns (strength_score-оор)
-    top_patterns = (
+    hawkins_current = _resolve_hawkins_band(db, ewma)
+    hawkins_target = (
+        _next_hawkins_target(db, hawkins_current["level"])
+        if hawkins_current else None
+    )
+
+    # 2. Уншаагүй patterns (acknowledged=false) — strength-оор
+
+    all_unread = (
         db.table("detected_patterns")
-        .select("pattern_type, pattern_data, strength_score, detected_at")
+        .select("id, pattern_type, pattern_data, strength_score, detected_at")
         .eq("user_id", user_id)
-        .order("detected_at", desc=True)
         .order("strength_score", desc=True)
-        .limit(3)
         .execute()
     ).data or []
 
-    # 3. Хамгийн сүүлийн seed insight
-    last_entry = (
-        db.table("journal_entries")
-        .select("id")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(1)
-        .execute()
-    ).data or []
+    # pattern_type тус бүрээс хамгийн хүчтэй 1-г авна
+    seen_types: set[str] = set()
+    unread_patterns = []
+    for p in all_unread:
+        pt = p["pattern_type"]
+        if pt not in seen_types:
+            seen_types.add(pt)
+            unread_patterns.append(p)
 
-    last_seed = None
-    if last_entry:
-        seed_rows = (
-            db.table("seed_insights")
-            .select("mirror, reframe, relief, summary, created_at")
-            .eq("entry_id", last_entry[0]["id"])
-            .execute()
-        ).data or []
-        last_seed = seed_rows[0] if seed_rows else None
-
-    # 4. Хамгийн сүүлийн human insight
+    # 3. Хамгийн сүүлийн human insight (pattern-г үгээр тайлбарласан)
     last_human = (
         db.table("human_insights")
         .select("insight_text, highlight_type, strength_score, generated_at")
@@ -232,7 +319,7 @@ async def get_today_snapshot(
         .execute()
     ).data or []
 
-    # 5. Dominant emotion (journal_analyses-с шууд)
+    # 4. Top 2 dominant emotion + dyad (journal_analyses-с шууд)
     recent_analyses = (
         db.table("journal_analyses")
         .select(
@@ -246,19 +333,52 @@ async def get_today_snapshot(
         .execute()
     ).data or []
 
-    dominant_emotion = None
+    dominant_emotions = []
+    dyad = None
+
     if recent_analyses:
+        # Score нийлбэр тооцно
         totals: dict[str, float] = {}
         for r in recent_analyses:
             k = r["plutchik_primary"]
             totals[k] = totals.get(k, 0) + float(r.get("plutchik_intensity") or 0.5)
-        dominant_emotion = max(totals, key=totals.__getitem__)
+
+        # Top 2 авна
+        sorted_emotions = sorted(totals.items(), key=lambda x: x[1], reverse=True)
+        top_2 = sorted_emotions[:2]
+
+        # ref_plutchik-с emoji авна
+        if top_2:
+            emotion_keys = [e[0] for e in top_2]
+            ref_rows = (
+                db.table("ref_plutchik")
+                .select("emotion_key, label_mn, emoji")
+                .in_("emotion_key", emotion_keys)
+                .execute()
+            ).data or []
+            ref_map = {r["emotion_key"]: r for r in ref_rows}
+
+            total_score = sum(totals.values()) or 1.0
+            for emotion_key, score in top_2:
+                ref = ref_map.get(emotion_key, {})
+                dominant_emotions.append({
+                    "emotion":    emotion_key,
+                    "label_mn":   ref.get("label_mn"),
+                    "emoji":      ref.get("emoji"),
+                    "score":      round(score, 3),
+                    "percentage": round(score / total_score * 100, 1),
+                })
+
+        # Хоёр emotion байвал dyad хайна
+        if len(top_2) == 2:
+            dyad = _get_dyad(db, top_2[0][0], top_2[1][0])
 
     return {
-        "ewma":              ewma,
-        "entry_count":       count,
-        "top_patterns":      top_patterns,
-        "last_seed_insight": last_seed,
+        "hawkins_current":    hawkins_current,
+        "hawkins_target":     hawkins_target,
+        "entry_count":        count,
+        "unread_patterns":    unread_patterns,
         "last_human_insight": last_human[0] if last_human else None,
-        "dominant_emotion":  dominant_emotion,
+        "dominant_emotions":  dominant_emotions,
+        "dominant_dyad":      dyad,
     }

@@ -83,7 +83,7 @@ CREATE TABLE public.journal_analyses (
   CONSTRAINT journal_analyses_pkey PRIMARY KEY (id),
   CONSTRAINT journal_analyses_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.journal_entries(id),
   CONSTRAINT journal_analyses_plutchik_primary_fkey FOREIGN KEY (plutchik_primary) REFERENCES public.ref_plutchik(emotion_key),
-  CONSTRAINT journal_analyses_hawkins_level_fkey FOREIGN KEY (hawkins_level) REFERENCES public.ref_hawkins(level)
+  CONSTRAINT journal_analyses_hawkins_label_fkey FOREIGN KEY (hawkins_label) REFERENCES public.ref_hawkins(label_en)
 );
 CREATE TABLE public.journal_entries (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -149,7 +149,7 @@ CREATE TABLE public.ref_hawkins (
   level integer NOT NULL,
   band_code text NOT NULL,
   label_mn text NOT NULL,
-  label_en text NOT NULL,
+  label_en text NOT NULL UNIQUE,
   emotion_mn text,
   description text,
   is_power_level boolean NOT NULL DEFAULT false,
@@ -266,8 +266,7 @@ CREATE TABLE public.value_edges_tracker (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT value_edges_tracker_pkey PRIMARY KEY (id),
   CONSTRAINT value_edges_tracker_edge_id_fkey FOREIGN KEY (edge_id) REFERENCES public.value_edges(id),
-  CONSTRAINT value_edges_tracker_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.journal_entries(id),
-  CONSTRAINT value_edges_tracker_hawkins_level_fkey FOREIGN KEY (hawkins_level) REFERENCES public.ref_hawkins(level)
+  CONSTRAINT value_edges_tracker_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.journal_entries(id)
 );
 CREATE TABLE public.value_nodes (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),

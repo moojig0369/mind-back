@@ -195,84 +195,39 @@ def process_deep_insight(user_id: str) -> None:
     )
     _log.info(f"Deep Insight done: user={user_id}")
 
-
-# ── Job 4: Human Insight (автомат) ───────────────────────────────────────────
-
-def generate_human_insight_job(
-    user_id: str, run_id: str, entry_id: str
-) -> None:
+def generate_human_insight_job(user_id: str, run_id: str, entry_id: str):
     """
     Pattern Engine дуусмагц автоматаар дуудагдана.
     detected_patterns → LLM → human_insights хадгална → WS мэдэгдэл.
     Нэг run-д хоёр дахь удаа дуудагдвал кэш шалгаж алгасна.
     """
-    from app.services.llm_service import get_llm_service
-    from app.db.supabase import get_admin_client
-    from app.db.redis_client import get_redis_connection
+    from app.db.supabase import get_supabase
+    from app.services.patttern_engine import PatternEngine
+    from app.services.llm_service import LLMService
 
-    db    = get_admin_client()
-    redis = get_redis_connection()
 
-    # Нэг run-д нэг л insight үүсгэнэ
-    existing = (
-        db.table("human_insights")
-        .select("id")
-        .eq("pattern_run_id", run_id)
-        .execute()
-    ).data or []
+    supabase = get_supabase()
+    llm = LLMService()
 
-    if existing:
-        _log.info(f"Human insight кэшлэгдсэн — алгасна: run_id={run_id}")
-        return
+    # Patterns-ийг татна
+    patterns = PatternEngine().get_patterns_for_run(run_id)
 
-    # Тухайн run-н хамгийн хүчтэй 5 pattern
-    patterns = (
-        db.table("detected_patterns")
-        .select("pattern_type, pattern_data, strength_score")
-        .eq("user_id", user_id)
-        .eq("run_id", run_id)
-        .order("strength_score", desc=True)
-        .limit(5)
-        .execute()
-    ).data or []
+    # Top 5 хүртэл, strength_score-оор эрэмбэлнэ
+    top_patterns = sorted(patterns, key=lambda p: p["strength_score"], reverse=True)[:5]
 
-    if not patterns:
-        _log.warning(f"Human insight: pattern олдсонгүй run_id={run_id}")
-        return
+    for p in top_patterns:
+        result = llm.generate_pattern_insight(p)
 
-    try:
-        result = run_async(
-            get_llm_service().generate_human_insight(patterns)
-        )
-    except Exception as exc:
-        _log.error(f"Human insight LLM алдаа: {exc}", exc_info=True)
-        return
-
-    top_strength = max(p.get("strength_score") or 0.0 for p in patterns)
-
-    row = (
-        db.table("human_insights")
-        .insert(
-            {
-                "user_id":        user_id,
-                "pattern_run_id": run_id,
-                "insight_text":   result["insight_text"],
-                "highlight_type": result.get("highlight_type", ""),
-                "strength_score": top_strength,
-            }
-        )
-        .execute()
-    ).data[0]
-
-    publish(
-        redis, entry_id, "human_insight_ready",
-        payload={
-            "insight_id":     row["id"],
-            "insight_text":   result["insight_text"],
+        supabase.table("human_insights").insert({
+            "user_id": user_id,
+            "pattern_run_id": run_id,
+            "pattern_type": p["pattern_type"],   # 🔥 шинэ
+            "insight_text": result["insight_text"],
             "highlight_type": result.get("highlight_type", ""),
-        },
-    )
-    _log.info(f"Human Insight done: user={user_id}, run={run_id}")
+            "strength_score": p["strength_score"],
+        }).execute()
+
+# ── Job 4: Human Insight (автомат) ───────────────────────────────────────────
 
 
 # ── Private helpers ───────────────────────────────────────────────────────────
