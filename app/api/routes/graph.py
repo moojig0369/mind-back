@@ -246,7 +246,7 @@ async def get_today_snapshot(
       hawkins_current    — EWMA-с тооцсон одоогийн Hawkins төлөв (label, band, color)
       hawkins_target     — дараагийн band-н хамгийн доод level (зорилт + gap)
       entry_count        — нийт тэмдэглэлийн тоо
-      unread_patterns    — acknowledged=false байгаа patterns (strength-оор эрэмбэлсэн)
+      detected_patterns_type    — 
       last_human_insight — хамгийн сүүлийн human insight (pattern-г үгээр тайлбарласан)
       dominant_emotions  — хамгийн хүчтэй 2 сэтгэл хөдлөл + тэдгээрийн dyad
     """
@@ -262,24 +262,16 @@ async def get_today_snapshot(
         if hawkins_current else None
     )
 
-    # 2. Уншаагүй patterns (acknowledged=false) — strength-оор
+    # 2. Илэрсэн pattern хэв маягууд
 
-    all_unread = (
+    rows = (
         db.table("detected_patterns")
-        .select("id, pattern_type, pattern_data, strength_score, detected_at")
+        .select("pattern_type")
         .eq("user_id", user_id)
-        .order("strength_score", desc=True)
         .execute()
     ).data or []
 
-    # pattern_type тус бүрээс хамгийн хүчтэй 1-г авна
-    seen_types: set[str] = set()
-    unread_patterns = []
-    for p in all_unread:
-        pt = p["pattern_type"]
-        if pt not in seen_types:
-            seen_types.add(pt)
-            unread_patterns.append(p)
+    pattern_type_count = len({r["pattern_type"] for r in rows if r["pattern_type"]})
 
     # 3. Хамгийн сүүлийн human insight (pattern-г үгээр тайлбарласан)
     last_human = (
@@ -346,11 +338,11 @@ async def get_today_snapshot(
             dyad = _get_dyad(db, top_2[0][0], top_2[1][0])
 
     return {
-        "ewma": ewma,
+        "hawkins": ewma,
         "hawkins_current":    hawkins_current,
         "hawkins_target":     hawkins_target,
         "entry_count":        count,
-        "unread_patterns":    unread_patterns,
+        "pattern_type_count":    pattern_type_count,
         "last_human_insight": last_human[0] if last_human else None,
         "dominant_emotions":  dominant_emotions,
         "dominant_dyad":      dyad,
