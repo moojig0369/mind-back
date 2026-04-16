@@ -225,23 +225,6 @@ def generate_human_insight_job(
 
     # Pattern тус бүрт — type-аар давхардал шалгаж insight үүсгэнэ
     for p in patterns:
-        existing = (
-            db.table("human_insights")
-            .select("id")
-            .eq("user_id", user_id)
-            .eq("pattern_type", p["pattern_type"])
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        ).data or []
-
-        if existing:
-            _log.info(
-                f"Human insight кэшлэгдсэн — алгасна: "
-                f"pattern_type={p['pattern_type']}"
-            )
-            continue
-
         try:
             result = run_async(
                 get_llm_service().generate_human_insight([p])
@@ -252,15 +235,16 @@ def generate_human_insight_job(
 
         row = (
             db.table("human_insights")
-            .insert(
+            .upsert(
                 {
                     "user_id":        user_id,
                     "pattern_run_id": run_id,
-                    "pattern_type":   p["pattern_type"],   # 🔥 шинэ
+                    "pattern_type":   p["pattern_type"],
                     "insight_text":   result["insight_text"],
                     "highlight_type": result.get("highlight_type", ""),
                     "strength_score": p["strength_score"],
-                }
+                },
+                on_conflict="pattern_run_id,pattern_type"
             )
             .execute()
         ).data[0]
@@ -273,10 +257,6 @@ def generate_human_insight_job(
                 "highlight_type": result.get("highlight_type", ""),
                 "pattern_type":   p["pattern_type"],
             },
-        )
-        _log.info(
-            f"Human Insight done: user={user_id}, "
-            f"run={run_id}, pattern_type={p['pattern_type']}"
         )
 
 # ── Private helpers ───────────────────────────────────────────────────────────

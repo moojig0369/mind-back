@@ -31,15 +31,19 @@ def _get_journal_service() -> JournalService:
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _resolve_hawkins_band(db: Client, score: float | None) -> dict | None:
-    """EWMA score-оос Hawkins label + band мэдээлэл авна."""
+    """EWMA score-оос Hawkins label + бүх мэдээлэл авна."""
     if score is None:
         return None
 
-    level = round(score * 1000)  # 0–1 → 0–1000
+    level = int(score)
 
     row = (
         db.table("ref_hawkins")
-        .select("level,view_of_life,transcend_key,what_we_experience,state_of_consciousness, label_en, label_mn, band_code, ref_hawkins_bands(label_mn, color_hex, level_min, level_max)")
+        .select(
+            "level, label_en, label_mn, band_code, "
+            "view_of_life, what_we_experience, "
+            "transcend_key, state_of_consciousness"
+        )
         .lte("level", level)
         .order("level", desc=True)
         .limit(1)
@@ -49,66 +53,34 @@ def _resolve_hawkins_band(db: Client, score: float | None) -> dict | None:
     if not row:
         return None
 
-    r = row[0]
-    band = r.get("ref_hawkins_bands") or {}
-    return {
-        "level":      r["level"],
-        "label_en":   r["label_en"],
-        "label_mn":   r["label_mn"],
-        "band_code":  r["band_code"],
-        "band_label": band.get("label_mn"),
-        "color_hex":  band.get("color_hex"),
-        "band_min":   band.get("level_min"),
-        "band_max":   band.get("level_max"),
-    }
-
+    return row[0]
 
 def _next_hawkins_target(db: Client, current_level: int) -> dict | None:
     """Дараагийн band-н хамгийн доод level-г зорилт болгоно."""
     if current_level is None:
         return None
 
-    # Одоогийн band авна
-    current_band_row = (
+    level = int(current_level)
+
+    # Дараагийн хамгийн ойрхон их утгыг хайх
+    result = (
         db.table("ref_hawkins")
-        .select("band_code, ref_hawkins_bands(level_max)")
-        .lte("level", current_level)
-        .order("level", desc=True)
+        .select(
+            "level, label_en, label_mn, band_code, "
+            "view_of_life, what_we_experience, "
+            "transcend_key, state_of_consciousness"
+        )
+        .gt("level", current_level)  # Одоогийнхоос их
+        .order("level", desc=False)  # Өсөх дарааллаар (Хамгийн ойрыг нь эхэнд тавина)
         .limit(1)
         .execute()
-    ).data
+    )
 
-    if not current_band_row:
+    # Өгөгдөл байгаа эсэхийг заавал шалгана
+    if not result.data:
         return None
 
-    current_band_max = (current_band_row[0].get("ref_hawkins_bands") or {}).get("level_max")
-    if current_band_max is None:
-        return None
-
-    # Дараагийн band-н хамгийн доод level
-    next_row = (
-        db.table("ref_hawkins")
-        .select("level, label_en, label_mn, band_code, ref_hawkins_bands(label_mn, color_hex)")
-        .gt("level", current_band_max)
-        .order("level", asc=True)
-        .limit(1)
-        .execute()
-    ).data
-
-    if not next_row:
-        return None
-
-    r = next_row[0]
-    band = r.get("ref_hawkins_bands") or {}
-    return {
-        "level":      r["level"],
-        "label_en":   r["label_en"],
-        "label_mn":   r["label_mn"],
-        "band_label": band.get("label_mn"),
-        "color_hex":  band.get("color_hex"),
-        "gap":        r["level"] - current_level,
-    }
-
+    return result.data[0]
 
 def _get_dyad(db: Client, emotion_a: str, emotion_b: str) -> dict | None:
     """Хоёр primary emotion-н dyad нэр авна."""
@@ -374,6 +346,7 @@ async def get_today_snapshot(
             dyad = _get_dyad(db, top_2[0][0], top_2[1][0])
 
     return {
+        "ewma": ewma,
         "hawkins_current":    hawkins_current,
         "hawkins_target":     hawkins_target,
         "entry_count":        count,

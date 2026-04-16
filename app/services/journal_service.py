@@ -15,11 +15,6 @@ from app.services.graph_builder import GraphBuilder
 _DEEP_INSIGHT_THRESHOLD = 10
 
 
-def _snap_hawkins_level(level: int) -> int:
-    """LLM-н буцаасан дурын утгыг хамгийн ойр ref_hawkins утга руу тааруулна."""
-    return min(_HAWKINS_VALID_LEVELS, key=lambda v: abs(v - level))
-
-
 class JournalService:
     """Тэмдэглэлийн CRUD болон шинжилгээ хадгалалт."""
 

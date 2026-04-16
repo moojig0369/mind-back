@@ -62,6 +62,7 @@ class HumanInsightOut(BaseModel):
     generated_at: str
     acknowledged: bool
     pattern_run_id: str | None = None
+    pattern_type: str | None = None   # 🔥 шинэ
 
 
 class HumanInsightRequest(BaseModel):
@@ -282,19 +283,26 @@ async def list_human_insights(
     user: dict = Depends(get_current_user),
     db: Client = Depends(_db),
 ):
-    """Хэрэглэгчийн хадгалагдсан human insight жагсаалт."""
-    return (
+    """Хэрэглэгчийн хадгалагдсан human insight — pattern_type тус бүрээр хамгийн сүүлийнх."""
+    rows = (
         db.table("human_insights")
         .select(
             "id, insight_text, highlight_type, strength_score, "
-            "generated_at, acknowledged, pattern_run_id"
+            "generated_at, acknowledged, pattern_run_id, pattern_type"
         )
         .eq("user_id", user["id"])
         .order("generated_at", desc=True)
-        .limit(limit)
         .execute()
     ).data or []
 
+    # pattern_type тус бүрээр хамгийн сүүлийнхийг үлдээнэ
+    seen: dict = {}
+    for row in rows:
+        pt = row.get("pattern_type")
+        if pt not in seen:
+            seen[pt] = row
+
+    return list(seen.values())[:limit]
 
 @router.patch("/human-insight/{insight_id}/ack", status_code=204)
 async def acknowledge_human_insight(

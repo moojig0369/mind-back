@@ -1,61 +1,67 @@
 import json
 import time
 import logging
-from openai import AsyncOpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential
+import asyncio
+import re
+from typing import Any, Dict, List, Optional
+from openai import AsyncOpenAI, RateLimitError
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log
+)
 from app.core.settings import get_settings
 from app.schemas.analysis import LlmAnalysisResult, SeedInsightData
 from app.services import prompt_builder
-import re  # Файлын хамгийн дээр import re нэмэхээ мартав аа!
 
+# Лог тохиргоо
 _log = logging.getLogger(__name__)
 _settings = get_settings()
 
-# Vertex AI OpenAI-compatible endpoint format
-_VERTEX_BASE = _settings.llm_base_url
-
-
 def _is_vertex(base_url: str) -> bool:
+    """URL нь Google Vertex AI endpoint мөн эсэхийг шалгах."""
     return "aiplatform.googleapis.com" in (base_url or "")
 
-
 class _VertexTokenManager:
-    """Google access token-ийг авч, хугацаа дуусахад refresh хийнэ."""
-
+    """Google Cloud-ын access token-ийг автоматаар удирдаж, refresh хийнэ."""
+    
     def __init__(self) -> None:
         try:
             import google.auth
             import google.auth.transport.requests as grequests
+            # Cloud Platform scope нь Vertex AI-д хандахад шаардлагатай
             self._credentials, _ = google.auth.default(
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             self._request = grequests.Request()
         except ImportError:
-            raise RuntimeError(
-                "google-auth байхгүй байна. "
-                "`pip install google-auth` ажиллуулна уу."
-            )
+            _log.error("❌ google-auth сан суугаагүй байна. 'pip install google-auth' ажиллуулна уу.")
+            raise RuntimeError("Missing google-auth library.")
         self._expires_at: float = 0.0
 
     def token(self) -> str:
-        """Token буцаана; хугацаа дуусахаас 5 мин өмнө refresh хийнэ."""
+        """Хүчинтэй токен буцаана. Хугацаа дуусахаас 5 минутын өмнө шинэчилнэ."""
         if time.time() >= self._expires_at - 300:
             self._credentials.refresh(self._request)
-            # google-auth expiry нь datetime эсвэл None байж болно
             if self._credentials.expiry:
                 self._expires_at = self._credentials.expiry.timestamp()
             else:
-                self._expires_at = time.time() + 3600  # fallback 1 цаг
-            _log.debug("🔑 Vertex AI token refresh хийлээ")
+                self._expires_at = time.time() + 3600  # Fallback 1 цаг
+            _log.debug("🔑 Vertex AI access token шинэчлэгдлээ.")
         return self._credentials.token
 
-
 class LlmService:
-    """LLM дуудалт болон хариулт боловсруулалт."""
+    """LLM API-тай харилцах үндсэн сервис (OpenAI болон Vertex AI-г дэмжинэ)."""
 
     def __init__(self) -> None:
         self._base = _settings.llm_base_url
         self._vertex = _is_vertex(self._base)
+        
+        # Traffic Smoothing: Секундэд ирэх огцом spikes-ээс сэргийлж нэгэн зэрэг 
+        # гарах хүсэлтийн тоог хязгаарлана (Concurrency control).
+        self._semaphore = asyncio.Semaphore(10) 
 
         if self._vertex:
             self._token_mgr = _VertexTokenManager()
@@ -68,26 +74,32 @@ class LlmService:
             )
 
     def _make_vertex_client(self) -> AsyncOpenAI:
+        """Vertex AI-д зориулсан OpenAI-compatible клиент үүсгэх."""
         return AsyncOpenAI(
             api_key=self._token_mgr.token(),
             base_url=self._base,
         )
 
     def _get_client(self) -> AsyncOpenAI:
-        """Vertex бол token шинэчлэгдсэн client буцаана."""
+        """Токен шинэчлэгдсэн бол шинэ клиент буцаах."""
         if self._vertex:
-            # Token шинэчлэгдсэн бол client-ийг дахин үүсгэнэ
             new_token = self._token_mgr.token()
             if new_token != self._client.api_key:
-                self._client = AsyncOpenAI(
-                    api_key=new_token,
-                    base_url=self._base,
-                )
+                self._client = self._make_vertex_client()
         return self._client
+
+    # 429 Resource Exhausted болон Rate Limit алдаануудыг дахин оролдох стратеги
+    # Exponential backoff: 4с, 8с, 16с... гэх мэтээр хүлээх хугацааг ихэсгэнэ.
+    _retry_logic = retry(
+        retry=retry_if_exception_type((RateLimitError, Exception)),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        stop=stop_after_attempt(6),
+        before_sleep=before_sleep_log(_log, logging.WARNING)
+    )
 
     # ── Seed Insight ──────────────────────────────────────────────────────────
 
-    @retry(stop=stop_after_attempt(1), wait=wait_exponential(min=2, max=8))
+    @_retry_logic
     async def generate_seed_insight(
         self,
         surface: str,
@@ -101,19 +113,19 @@ class LlmService:
 
         if not parsed.get("summary"):
             parsed["summary"] = parsed.get("mirror", "")[:120]
-            _log.warning("⚠️  summary дутуу — mirror-ээс авлаа")
+            _log.warning("⚠️ summary талбар дутуу байна - mirror-ээс авлаа.")
 
         return SeedInsightData(**parsed)
 
     # ── Analysis ──────────────────────────────────────────────────────────────
 
-    @retry(stop=stop_after_attempt(1), wait=wait_exponential(min=2, max=8))
+    @_retry_logic
     async def run_analysis(
         self,
         surface: str,
         inner: str,
         meaning: str,
-        ewma_previous: float | None = None,
+        ewma_previous: Optional[float] = None,
     ) -> LlmAnalysisResult:
         messages = prompt_builder.build_analysis_messages(
             surface, inner, meaning, ewma_previous
@@ -125,25 +137,25 @@ class LlmService:
 
     # ── Deep Insight ──────────────────────────────────────────────────────────
 
-    @retry(stop=stop_after_attempt(1), wait=wait_exponential(min=2, max=8))
+    @_retry_logic
     async def generate_deep_insight(
-        self, graph_summary: dict, entry_count: int
-    ) -> dict:
+        self, graph_summary: Dict[str, Any], entry_count: int
+    ) -> Dict[str, Any]:
         messages = prompt_builder.build_deep_insight_messages(
             graph_summary, entry_count
         )
         raw = await self._complete(messages, caller="deep_insight")
         return _parse_json(raw)
 
-    @retry(stop=stop_after_attempt(1), wait=wait_exponential(min=2, max=8))
-    async def generate_human_insight(self, patterns: list[dict]) -> dict:
-        """
-        Pattern жагсаалтаас монгол хэлний human insight үүсгэнэ.
-        {"insight_text": str, "highlight_type": str, "strength_score": float}
-        """
+    # ── Human Insight ─────────────────────────────────────────────────────────
+
+    @_retry_logic
+    async def generate_human_insight(self, patterns: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Pattern жагсаалтаас human insight үүсгэнэ."""
         messages = prompt_builder.build_human_insight_messages(patterns)
         raw = await self._complete(messages, caller="human_insight")
         parsed = _parse_json(raw)
+        
         return {
             "insight_text":   parsed.get("insight_text", ""),
             "highlight_type": parsed.get("highlight_type", ""),
@@ -152,32 +164,36 @@ class LlmService:
 
     # ── Private ───────────────────────────────────────────────────────────────
 
-    async def _complete(self, messages: list[dict], caller: str = "llm") -> str:
-        start = time.perf_counter()
+    async def _complete(self, messages: List[Dict[str, str]], caller: str = "llm") -> str:
+        """LLM-рүү хүсэлт илгээх үндсэн функц."""
+        async with self._semaphore: # Traffic smoothing / Concurrency control
+            start = time.perf_counter()
 
-        response = await self._get_client().chat.completions.create(
-            model=_settings.llm_model,
-            messages=messages,
-            temperature=_settings.llm_temperature,
-            max_tokens=_settings.llm_max_tokens,
-            response_format={"type": "json_object"},
-        )
+            response = await self._get_client().chat.completions.create(
+                model=_settings.llm_model,
+                messages=messages,
+                temperature=_settings.llm_temperature,
+                max_tokens=_settings.llm_max_tokens,
+                response_format={"type": "json_object"},
+            )
 
-        elapsed = time.perf_counter() - start
-        u = response.usage
+            elapsed = time.perf_counter() - start
+            usage = response.usage
 
-        _log.info(
-            f"🤖 [{caller}] model={_settings.llm_model} | "
-            f"prompt={u.prompt_tokens} | "
-            f"completion={u.completion_tokens} | "
-            f"total={u.total_tokens} | "
-            f"time={elapsed:.2f}s"
-        )
+            _log.info(
+                f"🤖 [{caller}] model={_settings.llm_model} | "
+                f"tokens: p={usage.prompt_tokens}, c={usage.completion_tokens} | "
+                f"time={elapsed:.2f}s"
+            )
 
-        content = response.choices[0].message.content
-        _log.debug(f"📥 [{caller}] raw response: {content}")
+            content = response.choices[0].message.content
+            if not content:
+                _log.error(f"📥 [{caller}] LLM хоосон хариу буцаалаа.")
+                return ""
+                
+            return content
 
-        return content
+
 
 def _parse_json(raw: str) -> dict:
     """Markdown болон илүүдэл текстийг цэвэрлэж JSON parse хийнэ."""

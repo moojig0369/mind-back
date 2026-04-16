@@ -65,6 +65,7 @@ CREATE TABLE public.human_insights (
   strength_score numeric DEFAULT 0,
   generated_at timestamp with time zone DEFAULT now(),
   acknowledged boolean DEFAULT false,
+  pattern_type text,
   CONSTRAINT human_insights_pkey PRIMARY KEY (id),
   CONSTRAINT human_insights_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
   CONSTRAINT human_insights_pattern_run_id_fkey FOREIGN KEY (pattern_run_id) REFERENCES public.pattern_runs(id)
@@ -154,6 +155,10 @@ CREATE TABLE public.ref_hawkins (
   description text,
   is_power_level boolean NOT NULL DEFAULT false,
   calibration_note text,
+  view_of_life text,
+  transcend_key text,
+  what_we_experience text,
+  state_of_consciousness text,
   CONSTRAINT ref_hawkins_pkey PRIMARY KEY (level),
   CONSTRAINT ref_hawkins_band_code_fkey FOREIGN KEY (band_code) REFERENCES public.ref_hawkins_bands(code)
 );
