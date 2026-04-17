@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://aiplatform.googleapis.com/v1beta1/projects/mind-step/locations/us-central1/endpoints/openapi"
     llm_api_key: str
     llm_model: str = "google/gemini-2.5-flash"           # Seed / Analysis — хурдан, хямд
-    llm_model_batch: str = "google/gemini-2.5-pro "          # Batch (human insight) — нарийн, чанартай
+    llm_model_batch: str = "google/gemini-2.5-pro"          # Batch (human insight) — нарийн, чанартай
     llm_temperature: float = 0.7
     llm_max_tokens: int = 2000
     llm_max_tokens_batch: int = 10000         # 5 insight × ~600 token
