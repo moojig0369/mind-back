@@ -195,12 +195,19 @@ def process_deep_insight(user_id: str) -> None:
     )
     _log.info(f"Deep Insight done: user={user_id}")
 
-# ── Job 4: Human Insight (автомат) ───────────────────────────────────────────
+# ── Job 4: Human Insight (batch) ─────────────────────────────────────────────
 
 def generate_human_insight_job(
     user_id: str, run_id: str, entry_id: str
 ) -> None:
+    """Pattern-уудыг НЭГ batch LLM дуудлагаар insight болгоно.
 
+    Өмнөх хэрэгжилт нь 5 pattern тус бүрт тус тусдаа LLM дуудлага хийж
+    overload үүсгэж байсан.  Batch хандлагаар:
+      - 1 LLM дуудлага → бүх insight нэгэн зэрэг
+      - llm_model_batch (gpt-4o) ашиглана — чанар хангаж, token limit нэмнэ
+      - pattern_type-аар result-ийг DB-тэй match хийж upsert хийнэ
+    """
     from app.services.llm_service import get_llm_service
     from app.db.supabase import get_admin_client
     from app.db.redis_client import get_redis_connection
@@ -223,41 +230,53 @@ def generate_human_insight_job(
         _log.warning(f"Human insight: pattern олдсонгүй run_id={run_id}")
         return
 
-    # Pattern тус бүрт — type-аар давхардал шалгаж insight үүсгэнэ
-    for p in patterns:
-        try:
-            result = run_async(
-                get_llm_service().generate_human_insight([p])
-            )
-        except Exception as exc:
-            _log.error(f"Human insight LLM алдаа: {exc}", exc_info=True)
+    # ── Нэг batch дуудлага: бүх pattern → бүх insight ────────────────────────
+    try:
+        results = run_async(
+            get_llm_service().generate_human_insight(patterns)
+        )
+    except Exception as exc:
+        _log.error(f"Human insight batch LLM алдаа: {exc}", exc_info=True)
+        raise
+
+    # pattern_type → DB row map (хурдан lookup-д)
+    pattern_map = {p["pattern_type"]: p for p in patterns}
+
+    for item in results:
+        ptype = item.get("pattern_type", "")
+        p = pattern_map.get(ptype)
+        if not p:
+            _log.warning(f"Human insight: LLM-ийн буцаасан pattern_type олдсонгүй: {ptype!r}")
             continue
 
-        row = (
-            db.table("human_insights")
-            .upsert(
-                {
-                    "user_id":        user_id,
-                    "pattern_run_id": run_id,
-                    "pattern_type":   p["pattern_type"],
-                    "insight_text":   result["insight_text"],
-                    "highlight_type": result.get("highlight_type", ""),
-                    "strength_score": p["strength_score"],
-                },
-                on_conflict="pattern_run_id,pattern_type"
-            )
-            .execute()
-        ).data[0]
+        try:
+            row = (
+                db.table("human_insights")
+                .upsert(
+                    {
+                        "user_id":        user_id,
+                        "pattern_run_id": run_id,
+                        "pattern_type":   ptype,
+                        "insight_text":   item["insight_text"],
+                        "highlight_type": item.get("highlight_type", ""),
+                        "strength_score": p["strength_score"],
+                    },
+                    on_conflict="pattern_run_id,pattern_type"
+                )
+                .execute()
+            ).data[0]
 
-        publish(
-            redis, entry_id, "human_insight_ready",
-            payload={
-                "insight_id":     row["id"],
-                "insight_text":   result["insight_text"],
-                "highlight_type": result.get("highlight_type", ""),
-                "pattern_type":   p["pattern_type"],
-            },
-        )
+            publish(
+                redis, entry_id, "human_insight_ready",
+                payload={
+                    "insight_id":     row["id"],
+                    "insight_text":   item["insight_text"],
+                    "highlight_type": item.get("highlight_type", ""),
+                    "pattern_type":   ptype,
+                },
+            )
+        except Exception as exc:
+            _log.error(f"Human insight upsert алдаа ({ptype}): {exc}", exc_info=True)
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 

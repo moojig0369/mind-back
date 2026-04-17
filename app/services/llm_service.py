@@ -147,33 +147,67 @@ class LlmService:
         raw = await self._complete(messages, caller="deep_insight")
         return _parse_json(raw)
 
-    # ── Human Insight ─────────────────────────────────────────────────────────
+    # ── Human Insight (Batch) ─────────────────────────────────────────────────
 
     @_retry_logic
-    async def generate_human_insight(self, patterns: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Pattern жагсаалтаас human insight үүсгэнэ."""
+    async def generate_human_insight(self, patterns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Pattern жагсаалтаас human insight-уудыг НЭГ batch дуудлагаар үүсгэнэ.
+
+        - Нэг pattern → нэг LLM дуудлага хийх нь overload үүсгэдэг тул
+          бүх pattern-г нэгэн зэрэг дамжуулж, JSON массиваар хариу авна.
+        - Batch дуудлага тул llm_model_batch + llm_max_tokens_batch ашиглана.
+        """
         messages = prompt_builder.build_human_insight_messages(patterns)
-        raw = await self._complete(messages, caller="human_insight")
+        raw = await self._complete(
+            messages,
+            caller="human_insight_batch",
+            model=_settings.llm_model_batch,
+            max_tokens=_settings.llm_max_tokens_batch,
+        )
         parsed = _parse_json(raw)
-        
-        return {
-            "insight_text":   parsed.get("insight_text", ""),
-            "highlight_type": parsed.get("highlight_type", ""),
-            "strength_score": float(parsed.get("strength_score", 0.0)),
-        }
+
+        # Хариу нь {"insights": [...]} эсвэл шууд [...] байж болно
+        items: List[Dict] = parsed.get("insights") or (parsed if isinstance(parsed, list) else [])
+
+        if not items:
+            # Fallback: хуучин нэг-объект хариу (backward-compat)
+            items = [parsed]
+
+        results = []
+        for item in items:
+            results.append({
+                "insight_text":   item.get("insight_text", ""),
+                "highlight_type": item.get("highlight_type", ""),
+                "strength_score": float(item.get("strength_score", 0.0)),
+                "pattern_type":   item.get("pattern_type", ""),
+            })
+        return results
 
     # ── Private ───────────────────────────────────────────────────────────────
 
-    async def _complete(self, messages: List[Dict[str, str]], caller: str = "llm") -> str:
-        """LLM-рүү хүсэлт илгээх үндсэн функц."""
+    async def _complete(
+        self,
+        messages: List[Dict[str, str]],
+        caller: str = "llm",
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """LLM-рүү хүсэлт илгээх үндсэн функц.
+
+        model / max_tokens — тодорхойлоогүй бол settings-ийн default ашиглана.
+        Batch дуудлага шиг тусгай тохиолдолд caller-аас override дамжуулна.
+        """
+        _model = model or _settings.llm_model
+        _max_tokens = max_tokens or _settings.llm_max_tokens
+
         async with self._semaphore: # Traffic smoothing / Concurrency control
             start = time.perf_counter()
 
             response = await self._get_client().chat.completions.create(
-                model=_settings.llm_model,
+                model=_model,
                 messages=messages,
                 temperature=_settings.llm_temperature,
-                max_tokens=_settings.llm_max_tokens,
+                max_tokens=_max_tokens,
                 response_format={"type": "json_object"},
             )
 
@@ -181,7 +215,7 @@ class LlmService:
             usage = response.usage
 
             _log.info(
-                f"🤖 [{caller}] model={_settings.llm_model} | "
+                f"🤖 [{caller}] model={_model} | "
                 f"tokens: p={usage.prompt_tokens}, c={usage.completion_tokens} | "
                 f"time={elapsed:.2f}s"
             )
